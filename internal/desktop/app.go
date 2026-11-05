@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/dacsang97/nakube/internal/cluster"
 )
@@ -23,6 +24,9 @@ type Confirm struct {
 	Namespace string
 	Name      string
 	Action    string
+	GVR       schema.GroupVersionResource
+	Replicas  int32
+	Revision  int64
 }
 
 // App is the native window state. It adapts one Session. It does not open
@@ -49,18 +53,25 @@ type App struct {
 	shown   Overview
 	confirm *Confirm
 
-	mode          string
-	row           int
-	logLines      []LogLine
-	logFilter     string
-	logFollow     bool
-	execTerm      *terminal.Terminal
-	execConn      io.Closer
-	execErr       string
-	yaml          *yamlScreen
-	genericRows   []Row
-	forwards      []*cluster.Forward
-	secretReveal  bool
+	mode         string
+	row          int
+	logLines     []LogLine
+	logFilter    string
+	logFollow    bool
+	logPod       string
+	logCancel    context.CancelFunc
+	execTerm     *terminal.Terminal
+	execConn     io.Closer
+	execErr      string
+	yaml         *yamlScreen
+	forwards     []*cluster.Forward
+	secretReveal bool
+
+	scaleTo       string
+	forwardLocal  string
+	forwardRemote string
+	rollbackRev   string
+
 	helmRelease   string
 	helmChart     string
 	helmNamespace string
@@ -68,11 +79,14 @@ type App struct {
 	helmDiff      *editor.DiffState
 	helmDry       bool
 	helmErr       string
-	argoApps      []cluster.ArgoApplication
-	istioRules    []cluster.IstioRule
-	crdMissing    bool
-	argoLoaded    bool
-	istioLoaded   bool
+
+	listGen     int
+	listID      string
+	listLoading bool
+	listErr     string
+	listNotice  string
+	listCols    []string
+	listRows    []listRow
 
 	watchCancel context.CancelFunc
 }
@@ -84,12 +98,17 @@ func New(session *cluster.Session) *App {
 		session = cluster.NewSession()
 	}
 	return &App{
-		session:    session,
-		selected:   "overview",
-		appearance: DefaultAppearance(),
-		pods:       map[string]*corev1.Pod{},
-		nodes:      map[string]*corev1.Node{},
-		events:     map[string]*corev1.Event{},
+		session:       session,
+		selected:      "overview",
+		appearance:    DefaultAppearance(),
+		pods:          map[string]*corev1.Pod{},
+		nodes:         map[string]*corev1.Node{},
+		events:        map[string]*corev1.Event{},
+		scaleTo:       "1",
+		forwardLocal:  "8080",
+		forwardRemote: "80",
+		rollbackRev:   "1",
+		helmNamespace: "default",
 	}
 }
 
@@ -261,6 +280,7 @@ func (a *App) switchContext(name string) {
 		a.mu.Unlock()
 		a.startWatch(context.Background())
 		a.refreshMetrics(context.Background())
+		a.loadList(a.Selected())
 		a.invalidate()
 	}()
 }
@@ -274,6 +294,7 @@ func (a *App) view(c *ui.Context) {
 	contexts := append([]string(nil), a.contexts...)
 	current := a.current
 	errText := a.errText
+	prev := a.selected
 	selected := a.selected
 	appearance := a.appearance
 	confirm := a.confirm
@@ -281,32 +302,42 @@ func (a *App) view(c *ui.Context) {
 
 	t := c.Theme()
 	chosen := current
-	ui.Row(c).Fill().Children(func() {
-		ui.Sidebar(c, &selected, func() {
-			for _, section := range Sections() {
-				ui.SidebarSection(c, section.Title, nil, func() {
-					for _, item := range section.Items {
-						ui.SidebarItem(c, item.ID, nil, item.Label)
-					}
-				})
-			}
-		}).Width(232)
-		ui.Column(c).Fill().Padding(20).Gap(16).Children(func() {
+	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
+		ui.Column(c).Width(232).Shrink(0).Background(t.Surface).Children(func() {
+			ui.Sidebar(c, &selected, func() {
+				for _, section := range Sections() {
+					ui.SidebarSection(c, section.Title, nil, func() {
+						for _, item := range section.Items {
+							ui.SidebarItem(c, item.ID, nil, item.Label)
+						}
+					})
+				}
+			}).Grow(1)
+		})
+		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Padding(20).Gap(12).Children(func() {
 			chosen = a.header(c, t, contexts, current, appearance)
 			if errText != "" {
 				ui.Text(c, errText).TextColor(t.Danger)
 			}
-			if selected == "overview" || selected == "" {
-				a.cards(c, t)
-			} else {
-				a.drawSelected(c, t, selected, nil)
-			}
+			a.mu.Lock()
+			snap := a.snapshotLocked(selected)
+			a.mu.Unlock()
+			a.drawMain(c, t, selected, snap)
 			a.confirmDialog(c, t, confirm)
 		})
 	})
 
 	if chosen != current {
 		a.switchContext(chosen)
+	}
+	if selected != prev {
+		a.row = 0
+		a.leaveOverlay()
+		a.mu.Lock()
+		a.selected = selected
+		a.mu.Unlock()
+		a.loadList(selected)
+		return
 	}
 	a.mu.Lock()
 	a.selected = selected
@@ -363,6 +394,15 @@ func (a *App) confirmDialog(c *ui.Context, t *ui.Theme, confirm *Confirm) {
 			ui.Text(c, confirm.Action+" "+confirm.Kind).FontSize(18).Bold()
 			ui.Text(c, confirm.Namespace+"/"+confirm.Name)
 			ui.Text(c, "This dialog keeps the object it opened on.").TextColor(t.TextMuted)
+			ui.Row(c).Gap(8).Children(func() {
+				if ui.Button(c, "Cancel").Clicked() {
+					open = false
+				}
+				if ui.Button(c, "Confirm").Clicked() {
+					a.applyConfirm()
+					open = false
+				}
+			})
 		})
 	})
 	if !open {

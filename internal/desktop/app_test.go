@@ -112,6 +112,24 @@ func TestEmptyContextView(t *testing.T) {
 	}
 }
 
+func TestSidebarScrolls(t *testing.T) {
+	a := New(cluster.NewSession())
+	tt := ui.NewTester(a.view, 400, 240)
+	before, ok := tt.Find("RequestAuthentications")
+	if !ok {
+		t.Fatalf("missing item, texts %q", tt.Texts())
+	}
+	if before.Y+before.H <= 240 {
+		t.Fatalf("item already in view at %v", before)
+	}
+	tt.Scroll(40, 80, 0, 800)
+	tt.Frame()
+	after, _ := tt.Find("RequestAuthentications")
+	if after.Y >= before.Y-1 {
+		t.Fatalf("sidebar did not scroll: before %v after %v", before, after)
+	}
+}
+
 func TestPublicErrorHidesToken(t *testing.T) {
 	got := publicError(errString("bearer token abc"))
 	if strings.Contains(got, "abc") || strings.Contains(strings.ToLower(got), "token") {

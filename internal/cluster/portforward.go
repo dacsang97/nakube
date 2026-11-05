@@ -7,6 +7,8 @@ import (
 	"net/http"
 
 	discoveryv1 "k8s.io/api/discovery/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
@@ -70,6 +72,20 @@ func (s *Session) PortForward(ctx context.Context, namespace, pod string, local,
 		return nil, ctx.Err()
 	}
 	return &Forward{Namespace: namespace, Pod: pod, Local: local, Remote: remote, stop: stop}, nil
+}
+
+// ReadyPod lists EndpointSlices and returns one ready pod for the service.
+func (s *Session) ReadyPod(ctx context.Context, namespace, service string) (string, error) {
+	cs, err := s.clientset()
+	if err != nil {
+		return "", err
+	}
+	selector := labels.Set{"kubernetes.io/service-name": service}.AsSelector().String()
+	list, err := cs.DiscoveryV1().EndpointSlices(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return "", err
+	}
+	return ReadyPodForService(list.Items, service)
 }
 
 // ReadyPodForService returns one ready endpoint pod. It refuses when none is ready.

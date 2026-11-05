@@ -2,119 +2,25 @@ package desktop
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/dacsang97/nakube/internal/cluster"
 )
 
-type podRow struct {
-	Namespace string
-	Name      string
-	Phase     string
-	Ready     string
-}
-
-func (a *App) drawSelected(c *ui.Context, t *ui.Theme, selected string, pods []podRow) {
-	if a.mode == "logs" {
-		a.drawLogs(c, t)
-		return
-	}
-	if a.mode == "exec" {
-		a.drawExec(c, t)
-		return
-	}
-	if a.mode == "yaml" {
-		a.drawYAML(c, t)
-		return
-	}
-	switch {
-	case selected == "overview" || selected == "":
-		a.cards(c, t)
-	case selected == "workloads" || isWorkload(selected):
-		a.drawWorkloads(c, t, selected, pods)
-	case selected == "helm":
-		a.drawHelm(c, t)
-	case strings.HasPrefix(selected, "argo-"):
-		a.drawArgo(c, t, selected)
-	case strings.HasPrefix(selected, "istio-"):
-		a.drawIstio(c, t, selected)
-	case selected == "port-forwards":
-		a.drawForwards(c, t)
-	default:
-		if kind, ok := LookupKind(selected); ok {
-			a.drawGeneric(c, t, kind)
-			return
-		}
-		ui.Text(c, labelFor(selected)).FontSize(22).Bold()
-		ui.Text(c, "No objects yet").TextColor(t.TextMuted)
-	}
-}
-
-func isWorkload(id string) bool {
-	switch id {
-	case "pods", "deployments", "replicasets", "daemonsets", "statefulsets", "jobs", "cronjobs":
-		return true
-	default:
-		return false
-	}
-}
-
-func (a *App) drawWorkloads(c *ui.Context, t *ui.Theme, selected string, pods []podRow) {
-	ui.Text(c, labelFor(selected)).FontSize(22).Bold()
-	if len(pods) == 0 {
-		ui.Text(c, "No objects yet").TextColor(t.TextMuted)
-		return
-	}
-	rows := pods
-	if a.row < 0 || a.row >= len(rows) {
-		a.row = 0
-	}
-	ui.Table(c, &ui.ListState{Selected: &a.row}, []ui.TableColumn{
-		{Title: "Namespace", Width: 140},
-		{Title: "Name", Width: 180},
-		{Title: "Ready", Width: 80},
-		{Title: "Phase", Width: 100},
-	}, len(rows), func(row, col int) {
-		item := rows[row]
-		text := []string{item.Namespace, item.Name, item.Ready, item.Phase}[col]
-		ui.Text(c, text)
-	}).FillWidth().Height(280)
-	item := rows[a.row]
-	ui.Row(c).Gap(8).Children(func() {
-		if ui.Button(c, "Logs").Clicked() {
-			a.openLogs(item.Namespace, item.Name, "")
-		}
-		if ui.Button(c, "Exec").Clicked() {
-			a.openExec(item.Namespace, item.Name, "")
-		}
-		if ui.Button(c, "YAML").Clicked() {
-			a.openYAML(cluster.Identity{Kind: "Pod", Namespace: item.Namespace, Name: item.Name, GVR: schema.GroupVersionResource{Version: "v1", Resource: "pods"}})
-		}
-		if ui.Button(c, "Delete").Clicked() {
-			a.OpenConfirm("Pod", item.Namespace, item.Name, "delete")
-		}
-		if selected != "pods" && ui.Button(c, "Restart").Clicked() {
-			a.OpenConfirm(kindFromID(selected), item.Namespace, item.Name, "restart")
-		}
-	})
-}
-
 func (a *App) drawLogs(c *ui.Context, t *ui.Theme) {
 	ui.Row(c).Gap(8).Children(func() {
 		if ui.Button(c, "Back").Clicked() {
-			a.mode = ""
+			a.leaveOverlay()
 		}
 		ui.Text(c, "Logs").FontSize(22).Bold()
+		if a.logPod != "" {
+			ui.Text(c, a.logPod).TextColor(t.TextMuted)
+		}
 		ui.TextInput(c, &a.logFilter).Placeholder("regex").Width(180)
 		label := "Follow on"
 		if !a.logFollow {
@@ -138,29 +44,37 @@ func (a *App) drawLogs(c *ui.Context, t *ui.Theme) {
 		{Title: "Line"},
 	}, len(shown), func(row, col int) {
 		line := shown[row]
-		if col == 0 {
-			ui.Text(c, line.Pod).TextColor(PodColor(line.Pod))
-			return
+		text := line.Pod
+		if col == 1 {
+			text = line.Text
 		}
-		ui.Text(c, line.Text).TextColor(PodColor(line.Pod))
+		ui.Text(c, text).TextColor(PodColor(line.Pod))
 	}).Fill()
 }
 
 func (a *App) openLogs(namespace, name, container string) {
+	if a.logCancel != nil {
+		a.logCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.logCancel = cancel
 	a.mode = "logs"
 	a.logLines = nil
 	a.logFollow = true
+	a.logPod = name
 	go func() {
-		_ = a.session.FanoutLogs(context.Background(), namespace, "app="+name, true, 200, func(lines []cluster.LogLine) {
+		err := a.session.StreamLogs(ctx, namespace, name, container, true, 200, func(lines []string) {
 			a.mu.Lock()
 			for _, line := range lines {
-				a.logLines = append(a.logLines, LogLine{Pod: line.Pod, Text: line.Text})
+				a.logLines = append(a.logLines, LogLine{Pod: name, Text: line})
 			}
 			a.mu.Unlock()
 			a.invalidate()
 		})
+		if err != nil && ctx.Err() == nil {
+			a.setErr(publicError(err))
+		}
 	}()
-	_ = container
 }
 
 func (a *App) drawExec(c *ui.Context, t *ui.Theme) {
@@ -182,13 +96,14 @@ func (a *App) drawExec(c *ui.Context, t *ui.Theme) {
 }
 
 func (a *App) openExec(namespace, name, container string) {
+	a.closeExec()
 	a.mode = "exec"
 	a.execErr = ""
 	go func() {
 		conn, err := a.session.Exec(context.Background(), namespace, name, container, []string{"/bin/sh"})
 		if err != nil {
 			a.mu.Lock()
-			a.execErr = err.Error()
+			a.execErr = publicError(err)
 			a.mu.Unlock()
 			a.invalidate()
 			return
@@ -197,12 +112,18 @@ func (a *App) openExec(namespace, name, container string) {
 		if err != nil {
 			_ = conn.Close()
 			a.mu.Lock()
-			a.execErr = err.Error()
+			a.execErr = publicError(err)
 			a.mu.Unlock()
 			a.invalidate()
 			return
 		}
 		a.mu.Lock()
+		if a.mode != "exec" {
+			a.mu.Unlock()
+			term.Close()
+			_ = conn.Close()
+			return
+		}
 		a.execConn = conn
 		a.execTerm = term
 		a.mu.Unlock()
@@ -219,7 +140,9 @@ func (a *App) closeExec() {
 		a.execTerm.Close()
 		a.execTerm = nil
 	}
-	a.mode = ""
+	if a.mode == "exec" {
+		a.mode = ""
+	}
 }
 
 func (a *App) drawYAML(c *ui.Context, t *ui.Theme) {
@@ -232,7 +155,14 @@ func (a *App) drawYAML(c *ui.Context, t *ui.Theme) {
 		if ui.Button(c, "Dry-run").Clicked() && a.yaml != nil {
 			a.dryRunYAML()
 		}
+		if a.yaml != nil && a.yaml.Identity.Kind == "Secret" && ui.Button(c, "Reveal").Clicked() {
+			a.secretReveal = !a.secretReveal
+			a.openYAML(a.yaml.Identity)
+		}
 	})
+	if a.yaml != nil && a.yaml.Err != "" {
+		ui.Text(c, a.yaml.Err).TextColor(t.Danger)
+	}
 	if a.yaml == nil || a.yaml.State == nil {
 		ui.Text(c, "Loading").TextColor(t.TextMuted)
 		return
@@ -260,19 +190,27 @@ func (a *App) drawYAML(c *ui.Context, t *ui.Theme) {
 func (a *App) openYAML(id cluster.Identity) {
 	a.mode = "yaml"
 	a.yaml = &yamlScreen{Identity: id}
+	reveal := a.secretReveal
 	go func() {
 		body, err := a.session.GetYAML(context.Background(), id)
 		if err != nil {
-			body = fmt.Sprintf("# %s\n", err.Error())
+			a.mu.Lock()
+			if a.yaml != nil {
+				a.yaml.Err = publicError(err)
+			}
+			a.mu.Unlock()
+			a.invalidate()
+			return
 		}
-		if id.Kind == "Secret" && !a.secretReveal {
+		if id.Kind == "Secret" && !reveal {
 			body = maskSecretYAML(body)
 		}
 		buf := editor.NewBuffer(body)
 		buf.SetLanguage(editor.LanguageFor("resource.yaml"))
 		a.mu.Lock()
-		if a.yaml != nil {
+		if a.yaml != nil && a.yaml.Identity == id {
 			a.yaml.State = &editor.State{Buffer: buf}
+			a.yaml.Err = ""
 		}
 		a.mu.Unlock()
 		a.invalidate()
@@ -292,7 +230,8 @@ func (a *App) dryRunYAML() {
 			return
 		}
 		if err != nil {
-			a.yaml.Err = err.Error()
+			a.yaml.Err = publicError(err)
+			a.invalidate()
 			return
 		}
 		a.yaml.Confirm = OpenYAML(preview, body)
@@ -301,76 +240,24 @@ func (a *App) dryRunYAML() {
 		old.SetLanguage(lang)
 		newBuf.SetLanguage(lang)
 		a.yaml.Diff = &editor.DiffState{Old: old, New: newBuf}
+		a.yaml.Err = ""
 		a.invalidate()
 	}()
 }
 
-func (a *App) drawGeneric(c *ui.Context, t *ui.Theme, kind Kind) {
-	ui.Text(c, kind.ID).FontSize(22).Bold()
-	rows := a.genericRows
-	if len(rows) == 0 {
-		ui.Text(c, "No objects yet").TextColor(t.TextMuted)
-	} else {
-		if a.row < 0 || a.row >= len(rows) {
-			a.row = 0
-		}
-		ui.Table(c, &ui.ListState{Selected: &a.row}, []ui.TableColumn{
-			{Title: "Namespace", Width: 160},
-			{Title: "Name", Width: 220},
-			{Title: "Age", Width: 100},
-		}, len(rows), func(row, col int) {
-			item := rows[row]
-			switch col {
-			case 0:
-				ui.Text(c, item.Namespace)
-			case 1:
-				ui.Text(c, item.Name)
-			default:
-				ui.Text(c, item.Age.Truncate(time.Second).String())
-			}
-		}).FillWidth().Height(320)
-		item := rows[a.row]
-		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, "YAML").Clicked() {
-				a.openYAML(cluster.Identity{GVR: kind.GVR, Kind: kind.ID, Namespace: item.Namespace, Name: item.Name})
-			}
-			if ui.Button(c, "Delete").Clicked() {
-				a.OpenConfirm(kind.ID, item.Namespace, item.Name, "delete")
-			}
-			if kind.ID == "secrets" && ui.Button(c, "Reveal").Clicked() {
-				a.secretReveal = !a.secretReveal
-			}
-		})
-	}
-}
-
-func (a *App) drawForwards(c *ui.Context, t *ui.Theme) {
-	ui.Text(c, "Port-forwards").FontSize(22).Bold()
-	if len(a.forwards) == 0 {
-		ui.Text(c, "No forwards in this process").TextColor(t.TextMuted)
-		return
-	}
-	for _, fw := range a.forwards {
-		ui.Row(c).Gap(8).Children(func() {
-			ui.Text(c, fmt.Sprintf("%s/%s %d:%d", fw.Namespace, fw.Pod, fw.Local, fw.Remote))
-			if ui.Button(c, "Stop").Clicked() {
-				fw.Stop()
-			}
-		})
-	}
-}
-
 func (a *App) drawHelm(c *ui.Context, t *ui.Theme) {
-	ui.Text(c, "Helm").FontSize(22).Bold()
-	ui.TextInput(c, &a.helmRelease).Placeholder("release").Label("Release")
-	ui.TextInput(c, &a.helmChart).Placeholder("chart").Label("Chart")
-	ui.TextInput(c, &a.helmNamespace).Placeholder("namespace").Label("Namespace")
+	ui.Text(c, "Install").FontSize(16).Bold()
+	ui.Row(c).Gap(8).Children(func() {
+		ui.TextInput(c, &a.helmRelease).Placeholder("release").Label("Release").Width(140)
+		ui.TextInput(c, &a.helmChart).Placeholder("chart").Label("Chart").Width(180)
+		ui.TextInput(c, &a.helmNamespace).Placeholder("namespace").Label("Namespace").Width(120)
+	})
 	if a.helmValues == nil {
 		buf := editor.NewBuffer("")
 		buf.SetLanguage(editor.LanguageFor("values.yaml"))
 		a.helmValues = &editor.State{Buffer: buf}
 	}
-	editor.View(c, a.helmValues).Height(160)
+	editor.View(c, a.helmValues).Height(120)
 	ui.Row(c).Gap(8).Children(func() {
 		if ui.Button(c, "Dry-run").Clicked() {
 			a.helmDry = true
@@ -386,7 +273,7 @@ func (a *App) drawHelm(c *ui.Context, t *ui.Theme) {
 		}
 	})
 	if a.helmDiff != nil {
-		editor.DiffView(c, a.helmDiff).Height(220)
+		editor.DiffView(c, a.helmDiff).Height(160)
 	}
 	if a.helmErr != "" {
 		ui.Text(c, a.helmErr).TextColor(t.Danger)
@@ -398,7 +285,6 @@ func (a *App) runHelm(dry bool) {
 		Release:   a.helmRelease,
 		Chart:     a.helmChart,
 		Namespace: a.helmNamespace,
-		Values:    "",
 		DryRun:    dry,
 	}
 	if a.helmValues != nil && a.helmValues.Buffer != nil {
@@ -412,72 +298,17 @@ func (a *App) runHelm(dry bool) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		if err != nil {
-			a.helmErr = err.Error()
+			a.helmErr = publicError(err)
 			a.invalidate()
 			return
 		}
+		a.helmErr = ""
 		if dry && res != nil {
 			old, newBuf := editor.NewBuffer(""), editor.NewBuffer(res.Manifest)
 			a.helmDiff = &editor.DiffState{Old: old, New: newBuf}
 		}
 		a.invalidate()
 	}()
-}
-
-func (a *App) drawArgo(c *ui.Context, t *ui.Theme, selected string) {
-	a.ensureArgo()
-	ui.Text(c, labelFor(selected)).FontSize(22).Bold()
-	if a.crdMissing {
-		ui.Text(c, "CRD is not installed").TextColor(t.TextMuted)
-		return
-	}
-	if len(a.argoApps) == 0 {
-		ui.Text(c, "No objects yet").TextColor(t.TextMuted)
-		return
-	}
-	for _, app := range a.argoApps {
-		ui.Text(c, fmt.Sprintf("%s/%s %s %s", app.Namespace, app.Name, app.Sync, app.Health))
-	}
-}
-
-func (a *App) drawIstio(c *ui.Context, t *ui.Theme, selected string) {
-	a.ensureIstio()
-	ui.Text(c, labelFor(selected)).FontSize(22).Bold()
-	if a.crdMissing {
-		ui.Text(c, "CRD is not installed").TextColor(t.TextMuted)
-		return
-	}
-	if len(a.istioRules) == 0 {
-		ui.Text(c, "No objects yet").TextColor(t.TextMuted)
-		return
-	}
-	for _, rule := range a.istioRules {
-		ui.Text(c, rule.Match)
-		for _, dest := range rule.Destinations {
-			ui.Text(c, fmt.Sprintf("%s %s %d", dest.Host, dest.Subset, dest.Weight)).TextColor(t.TextMuted)
-		}
-	}
-}
-
-func podRows(pods map[string]*podSnap) []podRow {
-	out := make([]podRow, 0, len(pods))
-	for _, pod := range pods {
-		out = append(out, podRow{Namespace: pod.Namespace, Name: pod.Name, Phase: pod.Phase, Ready: pod.Ready})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Namespace == out[j].Namespace {
-			return out[i].Name < out[j].Name
-		}
-		return out[i].Namespace < out[j].Namespace
-	})
-	return out
-}
-
-type podSnap struct {
-	Namespace string
-	Name      string
-	Phase     string
-	Ready     string
 }
 
 func maskSecretYAML(body string) string {
@@ -506,25 +337,6 @@ func maskSecretYAML(body string) string {
 	return b.String()
 }
 
-func kindFromID(id string) string {
-	switch id {
-	case "deployments":
-		return "Deployment"
-	case "replicasets":
-		return "ReplicaSet"
-	case "daemonsets":
-		return "DaemonSet"
-	case "statefulsets":
-		return "StatefulSet"
-	case "jobs":
-		return "Job"
-	case "cronjobs":
-		return "CronJob"
-	default:
-		return "Pod"
-	}
-}
-
 type yamlScreen struct {
 	Identity cluster.Identity
 	State    *editor.State
@@ -537,33 +349,4 @@ func (a *App) applyYAML(id cluster.Identity, body string) error {
 	return a.session.Apply(context.Background(), id, body)
 }
 
-func (a *App) ensureArgo() {
-	if a.argoLoaded {
-		return
-	}
-	a.argoLoaded = true
-	go func() {
-		apps, err := a.session.ListArgoApplications(context.Background())
-		a.mu.Lock()
-		a.argoApps = apps
-		a.crdMissing = apierrors.IsNotFound(err)
-		a.mu.Unlock()
-		a.invalidate()
-	}()
-}
-
-func (a *App) ensureIstio() {
-	if a.istioLoaded {
-		return
-	}
-	a.istioLoaded = true
-	go func() {
-		a.mu.Lock()
-		a.crdMissing = a.session.Current() == ""
-		a.mu.Unlock()
-		a.invalidate()
-	}()
-}
-
-// Keep io import used by exec close through the conn interface.
 var _ io.Closer = (*cluster.ExecConn)(nil)

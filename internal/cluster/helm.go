@@ -298,6 +298,55 @@ func (s *Session) HelmUninstall(ctx context.Context, namespace, name string) err
 	return err
 }
 
+// HelmRelease is one installed release. It has no chart values.
+type HelmRelease struct {
+	Name      string
+	Namespace string
+	Chart     string
+	Status    string
+	Revision  int
+}
+
+// HelmList lists releases in every namespace. It does not install or upgrade.
+func (s *Session) HelmList(ctx context.Context) ([]HelmRelease, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	ns := s.Namespace()
+	if ns == "" {
+		ns = "default"
+	}
+	cfg, err := s.helmConfig(ns)
+	if err != nil {
+		return nil, err
+	}
+	l := action.NewList(cfg)
+	l.All = true
+	l.AllNamespaces = true
+	rels, err := l.Run()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]HelmRelease, 0, len(rels))
+	for _, rel := range rels {
+		if rel == nil {
+			continue
+		}
+		item := HelmRelease{Name: rel.Name, Namespace: rel.Namespace, Revision: rel.Version}
+		if rel.Chart != nil && rel.Chart.Metadata != nil {
+			item.Chart = rel.Chart.Metadata.Name
+			if rel.Chart.Metadata.Version != "" {
+				item.Chart += "-" + rel.Chart.Metadata.Version
+			}
+		}
+		if rel.Info != nil {
+			item.Status = rel.Info.Status.String()
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
 // HelmRepoAdd adds a chart repository. It does not install a chart.
 func HelmRepoAdd(name, url, file string) error {
 	f := repo.NewFile()

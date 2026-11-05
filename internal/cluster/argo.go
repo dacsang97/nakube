@@ -161,19 +161,17 @@ func setArgoFinalizer(obj *unstructured.Unstructured, keep bool) error {
 	return nil
 }
 
-// ListArgoApplications reads Application status. A missing CRD returns an empty list.
+// ListArgoApplications reads Application status. A missing CRD is a NotFound error.
 func (s *Session) ListArgoApplications(ctx context.Context) ([]ArgoApplication, error) {
 	dyn, err := s.dynamicClient()
 	if err != nil {
 		return nil, err
 	}
 	list, err := dyn.Resource(argoGVR("applications")).List(ctx, metav1.ListOptions{})
-	if apierrors.IsNotFound(err) {
-		return []ArgoApplication{}, nil
-	}
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]ArgoApplication, 0, len(list.Items))
 	for i := range list.Items {
 		item := &list.Items[i]

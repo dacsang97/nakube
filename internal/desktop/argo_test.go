@@ -2,10 +2,11 @@ package desktop
 
 import "testing"
 
-func TestArgoMissingCRDText(t *testing.T) {
-	a := New(nil)
-	a.crdMissing = true
-	if !a.crdMissing {
-		t.Fatal("CRD missing flag did not stick")
+func TestMissingCRDNotice(t *testing.T) {
+	if emptyText("port-forwards") == "None" {
+		t.Fatal("port-forward empty text is the generic one")
+	}
+	if emptyText("services") != "None" {
+		t.Fatalf("services empty = %q", emptyText("services"))
 	}
 }
