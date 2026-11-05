@@ -1,6 +1,6 @@
 # NaKube
 
-Native Kubernetes client for one kube context. The desktop window is MyGo UI, not a web page. `internal/cluster` is the only Kubernetes implementation. The window, `nakube mcp`, and the phone listener are adapters over that package.
+Native Kubernetes client for one kube context. The desktop window is native UI, not a web page. `internal/cluster` is the only Kubernetes implementation. The window, `nakube mcp`, and the phone listener are adapters over that package.
 
 Module: `github.com/dacsang97/nakube`  
 Identifier: `io.gnas.nakube`
@@ -20,6 +20,20 @@ go test ./...
 ```
 
 Package tests need no cluster and no display. A missing kubeconfig is not a failure.
+
+## Checks
+
+CI runs these on pull requests and on `main`. None of them package or publish the app.
+
+```sh
+make fmt-check
+make vet
+make test
+make lint
+make snapshot
+```
+
+`make snapshot` is `goreleaser build --snapshot`. It compile-checks darwin, linux, and windows, amd64 and arm64, with `CGO_ENABLED=0`. Packaged builds stay on `scripts/release.sh`.
 
 ## Phone
 

@@ -3,7 +3,6 @@ package mcp
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"strconv"
 	"strings"
@@ -138,8 +137,3 @@ func frames(bodies ...string) string {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
-
-func raw(msg rpc) []byte {
-	b, _ := json.Marshal(msg)
-	return b
-}

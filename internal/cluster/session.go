@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -39,6 +40,7 @@ type Session struct {
 	mu sync.Mutex
 
 	rules     *clientcmd.ClientConfigLoadingRules
+	extra     []string
 	statePath string
 
 	name      string
@@ -89,15 +91,11 @@ func ReadSelectedContext(path string) (string, bool, error) {
 
 // RefreshLoadingRules re-reads kubeconfig search precedence. Call it after
 // ImportShellEnv, because KUBECONFIG may exist only in the login shell.
+// Files already added stay on the list.
 func (s *Session) RefreshLoadingRules() {
-	fresh := clientcmd.NewDefaultClientConfigLoadingRules()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.rules == nil {
-		s.rules = fresh
-		return
-	}
-	s.rules.Precedence = fresh.Precedence
+	s.rebuildRulesLocked()
 }
 
 // Open selects the context in the state file, or kubeconfig current-context
@@ -160,6 +158,54 @@ func (s *Session) Contexts() ([]string, string, error) {
 	return names, raw.CurrentContext, nil
 }
 
+// ContextInfo is one catalog line. Server has no user, query, or fragment,
+// so a token in the URL is not shown.
+type ContextInfo struct {
+	Name      string
+	Cluster   string
+	Namespace string
+	Server    string
+}
+
+// ContextInfos lists contexts for the catalog. It does not include users,
+// tokens, certificates, or exec commands.
+func (s *Session) ContextInfos() ([]ContextInfo, string, error) {
+	raw, err := s.rawConfig()
+	if err != nil {
+		return nil, "", err
+	}
+	names := make([]string, 0, len(raw.Contexts))
+	for name := range raw.Contexts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]ContextInfo, 0, len(names))
+	for _, name := range names {
+		info := ContextInfo{Name: name}
+		ctx := raw.Contexts[name]
+		if ctx != nil {
+			info.Cluster = ctx.Cluster
+			info.Namespace = ctx.Namespace
+			if cl := raw.Clusters[ctx.Cluster]; cl != nil {
+				info.Server = publicServer(cl.Server)
+			}
+		}
+		out = append(out, info)
+	}
+	return out, raw.CurrentContext, nil
+}
+
+func publicServer(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || u.Scheme == "" {
+		return ""
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
 // Current is the in-memory context name, or "" when nothing is open.
 func (s *Session) Current() string {
 	s.mu.Lock()
@@ -198,6 +244,7 @@ func (s *Session) clientset() (kubernetes.Interface, error) {
 func (s *Session) Clientset() (kubernetes.Interface, error) {
 	return s.clientset()
 }
+
 func (s *Session) dynamicClient() (dynamic.Interface, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

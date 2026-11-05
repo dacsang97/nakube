@@ -19,6 +19,7 @@ func main() {
 	}
 	cluster.PreparePath()
 	app := desktop.New(cluster.NewSession())
+	app.RestoreAppearance()
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{
 			Title:     "Nakube",

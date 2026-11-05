@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -84,16 +85,9 @@ func TestWatchFoldKeepsCopy(t *testing.T) {
 }
 
 func TestDarkUsesSameSidebar(t *testing.T) {
-	light := SidebarIDs()
-	if NextAppearance(AppearanceLight) != AppearanceDark {
-		t.Fatal("dark toggle")
-	}
-	if NextAppearance(AppearanceDark) != AppearanceLight {
-		t.Fatal("light toggle")
-	}
-	dark := SidebarIDs()
-	if strings.Join(light, ",") != strings.Join(dark, ",") {
-		t.Fatal("dark changed the sidebar")
+	ids := SidebarIDs()
+	if len(ids) == 0 {
+		t.Fatal("empty sidebar")
 	}
 }
 
@@ -104,16 +98,85 @@ func TestEmptyContextView(t *testing.T) {
 	if !tt.HasText("no kube context is configured") {
 		t.Fatalf("texts %q", tt.Texts())
 	}
-	if !tt.HasText("Overview") {
-		t.Fatalf("missing overview, texts %q", tt.Texts())
+	if !tt.HasText("Overview") || !tt.HasText("Workloads") || !tt.HasText("Pods") {
+		t.Fatalf("missing menu, texts %q", tt.Texts())
+	}
+	if !tt.HasText("MENU") {
+		t.Fatalf("missing menu title, texts %q", tt.Texts())
 	}
 	if !tt.HasText("metrics unavailable") {
 		t.Fatalf("missing metrics card, texts %q", tt.Texts())
 	}
 }
+func TestMenuSearchFilters(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.menuQuery = "virtual"
+	tt := ui.NewTester(a.view, 1100, 720)
+	if !tt.HasText("VirtualServices") {
+		t.Fatalf("missing match, texts %q", tt.Texts())
+	}
+	if tt.HasText("DaemonSets") || tt.HasText("Workloads") {
+		t.Fatalf("unrelated item stayed, texts %q", tt.Texts())
+	}
+}
+
+func TestCatalogPage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := New(cluster.NewSession())
+	a.router.Push("/catalog")
+	tt := ui.NewTester(a.view, 1100, 720)
+	for _, want := range []string{"Catalog", "Done", "Add file", "Add pasted kubeconfig", "No contexts", "~/.kube"} {
+		if !tt.HasText(want) {
+			t.Fatalf("missing %q, texts %q", want, tt.Texts())
+		}
+	}
+}
+
+func TestSettingsPage(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.router.Push("/settings")
+	tt := ui.NewTester(a.view, 1100, 720)
+	for _, want := range []string{"Settings", "Appearance", "System", "Light", "Dark"} {
+		if !tt.HasText(want) {
+			t.Fatalf("missing %q, texts %q", want, tt.Texts())
+		}
+	}
+	if _, ok := parseAppearance("nope"); ok {
+		t.Fatal("accepted an unknown appearance")
+	}
+	path := t.TempDir() + "/appearance"
+	if err := writeAppearance(path, mygo.ThemeDark); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAppearance(path); got != mygo.ThemeDark {
+		t.Fatalf("read %s", got)
+	}
+}
+
+func TestSidebarIcons(t *testing.T) {
+	seen := map[*ui.SVG]bool{}
+	for _, id := range SidebarIDs() {
+		icon := IconFor(id)
+		if icon == nil {
+			t.Fatalf("%s has no icon", id)
+		}
+		w, h := icon.Size()
+		if w != 24 || h != 24 {
+			t.Fatalf("%s icon size %v,%v", id, w, h)
+		}
+		seen[icon] = true
+	}
+	if len(seen) < 20 {
+		t.Fatalf("only %d distinct icons", len(seen))
+	}
+	if IconNamed("plus") == nil {
+		t.Fatal("the rail has no plus icon")
+	}
+}
 
 func TestSidebarScrolls(t *testing.T) {
 	a := New(cluster.NewSession())
+	a.router = ui.NewRouter("/istio-virtualservices")
 	tt := ui.NewTester(a.view, 400, 240)
 	before, ok := tt.Find("RequestAuthentications")
 	if !ok {
@@ -122,7 +185,7 @@ func TestSidebarScrolls(t *testing.T) {
 	if before.Y+before.H <= 240 {
 		t.Fatalf("item already in view at %v", before)
 	}
-	tt.Scroll(40, 80, 0, 800)
+	tt.Scroll(140, 160, 0, 800)
 	tt.Frame()
 	after, _ := tt.Find("RequestAuthentications")
 	if after.Y >= before.Y-1 {

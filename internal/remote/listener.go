@@ -62,12 +62,12 @@ type Pod struct {
 
 // Overview matches the desktop cards, including the empty metrics state.
 type Overview struct {
-	Context string `json:"context"`
-	Nodes   string `json:"nodes"`
-	Pods    string `json:"pods"`
+	Context  string `json:"context"`
+	Nodes    string `json:"nodes"`
+	Pods     string `json:"pods"`
 	Warnings string `json:"warnings"`
-	CPU     string `json:"cpu"`
-	Memory  string `json:"memory"`
+	CPU      string `json:"cpu"`
+	Memory   string `json:"memory"`
 }
 
 // ArgoApp is the phone Argo row. It has no operation the phone could post back.

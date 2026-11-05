@@ -396,7 +396,7 @@ func HelmSearch(indexYAML, term string) ([]string, error) {
 }
 
 func containsFold(s, sub string) bool {
-	return len(sub) == 0 || len(s) >= len(sub) && (s == sub || len(sub) > 0 && (containsLower(s, sub)))
+	return len(sub) == 0 || len(s) >= len(sub) && (s == sub || len(sub) > 0 && containsLower(s, sub))
 }
 
 func containsLower(s, sub string) bool {

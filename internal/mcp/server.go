@@ -15,6 +15,7 @@ import (
 
 	"github.com/dacsang97/nakube/internal/cluster"
 )
+
 // API is the cluster surface MCP may call. It has no apply, delete, or scale.
 type API interface {
 	ListGeneric(ctx context.Context, gvrGroup, version, resource, namespace string) ([]cluster.GenericRow, error)
@@ -251,7 +252,7 @@ func stringSlice(v any) []string {
 	}
 }
 
-func writeResult(out io.Writer, id any, result any) error {
+func writeResult(out io.Writer, id, result any) error {
 	return writeFrame(out, map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 }
 

@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/terminal"
@@ -37,6 +38,7 @@ type App struct {
 	session *cluster.Session
 	window  *mygo.Window
 	redraw  func()
+	router  *ui.Router
 
 	selected   string
 	appearance Appearance
@@ -88,6 +90,18 @@ type App struct {
 	listCols    []string
 	listRows    []listRow
 
+	catalogLoaded bool
+	catalogSynced time.Time
+	catalogPins   []string
+	catalogFiles  []string
+	catalogErr    string
+	addPath       string
+	paste         *editor.State
+
+	sidebarWidth float32
+	sideDrag     float32
+	menuQuery    string
+
 	watchCancel context.CancelFunc
 }
 
@@ -99,6 +113,7 @@ func New(session *cluster.Session) *App {
 	}
 	return &App{
 		session:       session,
+		router:        ui.NewRouter("/overview"),
 		selected:      "overview",
 		appearance:    DefaultAppearance(),
 		pods:          map[string]*corev1.Pod{},
@@ -153,6 +168,9 @@ func (a *App) Bootstrap(ctx context.Context) {
 		a.setErr(publicError(err))
 	}
 	a.session.RefreshLoadingRules()
+	a.ensureCatalog()
+	a.syncCatalog()
+	a.startCatalogWatch(ctx)
 	if err := a.session.Open(ctx); err != nil {
 		a.setErr(publicError(err))
 		a.loadContexts()
@@ -295,56 +313,121 @@ func (a *App) view(c *ui.Context) {
 	current := a.current
 	errText := a.errText
 	prev := a.selected
-	selected := a.selected
-	appearance := a.appearance
 	confirm := a.confirm
 	a.mu.Unlock()
+	if a.router == nil {
+		a.router = ui.NewRouter("/overview")
+	}
 
 	t := c.Theme()
 	chosen := current
-	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
-		ui.Column(c).Width(232).Shrink(0).Background(t.Surface).Children(func() {
-			ui.Sidebar(c, &selected, func() {
-				for _, section := range Sections() {
-					ui.SidebarSection(c, section.Title, nil, func() {
-						for _, item := range section.Items {
-							ui.SidebarItem(c, item.ID, nil, item.Label)
-						}
-					})
-				}
-			}).Grow(1)
+	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(shellBackdrop(t)).Padding(shellGap).Gap(shellGap).Children(func() {
+		ui.Row(c).Shrink(0).FillHeight().Radius(shellRadius).Clip().Background(t.Surface).Border(1, t.Border).Children(func() {
+			a.drawActivityBar(c, t, current)
+			a.drawSide(c, t)
 		})
-		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Padding(20).Gap(12).Children(func() {
-			chosen = a.header(c, t, contexts, current, appearance)
+		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Padding(12, 16).Gap(12).Children(func() {
+			chosen = a.header(c, t, contexts, current)
 			if errText != "" {
 				ui.Text(c, errText).TextColor(t.Danger)
 			}
-			a.mu.Lock()
-			snap := a.snapshotLocked(selected)
-			a.mu.Unlock()
-			a.drawMain(c, t, selected, snap)
-			a.confirmDialog(c, t, confirm)
+			a.router.View(c, func(r *ui.Route) {
+				a.drawPage(c, t, r, current, confirm)
+			})
 		})
 	})
 
 	if chosen != current {
 		a.switchContext(chosen)
 	}
-	if selected != prev {
-		a.row = 0
-		a.leaveOverlay()
-		a.mu.Lock()
-		a.selected = selected
-		a.mu.Unlock()
-		a.loadList(selected)
+	id := screenID(a.router.Path())
+	if id == prev {
 		return
 	}
+	a.row = 0
+	a.leaveOverlay()
 	a.mu.Lock()
-	a.selected = selected
+	a.selected = id
 	a.mu.Unlock()
+	a.loadList(id)
 }
 
-func (a *App) header(c *ui.Context, t *ui.Theme, contexts []string, current string, appearance Appearance) string {
+func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, confirm *Confirm) {
+	switch {
+	case r.Match("/catalog"):
+		r.Title("Catalog")
+		a.drawCatalog(c, t, current)
+	case r.Match("/settings"):
+		r.Title("Settings")
+		a.drawSettings(c, t)
+	case r.Match("/overview"), r.Match("/"):
+		r.Title("Overview")
+		a.cards(c, t)
+	case r.Match("/{id}"):
+		id := r.Param("id")
+		r.Title(labelFor(id))
+		a.mu.Lock()
+		snap := a.snapshotLocked(id)
+		a.mu.Unlock()
+		a.drawMain(c, t, id, snap)
+	default:
+		r.Title("Not found")
+		ui.Text(c, "Not found")
+	}
+	a.confirmDialog(c, t, confirm)
+}
+
+func (a *App) openPage(id string) {
+	if a.router == nil {
+		return
+	}
+	a.router.Push(pagePath(id))
+}
+
+func (a *App) togglePage(path string) {
+	if a.router == nil {
+		return
+	}
+	if a.router.Path() == path {
+		a.router.Back()
+		if a.router.Path() == path {
+			a.router.Replace("/overview")
+		}
+		return
+	}
+	a.router.Push(path)
+}
+
+func (a *App) closeCatalog() {
+	if a.router == nil || a.router.Path() != "/catalog" {
+		return
+	}
+	a.router.Back()
+	if a.router.Path() == "/catalog" {
+		a.router.Replace("/overview")
+	}
+}
+
+func pagePath(id string) string {
+	id = strings.Trim(strings.TrimSpace(id), "/")
+	if id == "" {
+		return "/overview"
+	}
+	return "/" + id
+}
+
+func screenID(path string) string {
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	if i := strings.IndexByte(path, '/'); i >= 0 {
+		path = path[:i]
+	}
+	if path == "" {
+		return "overview"
+	}
+	return path
+}
+
+func (a *App) header(c *ui.Context, t *ui.Theme, contexts []string, current string) string {
 	chosen := current
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, "Nakube").FontSize(22).Bold()
@@ -353,35 +436,8 @@ func (a *App) header(c *ui.Context, t *ui.Theme, contexts []string, current stri
 		} else {
 			ui.Select(c, &chosen, contexts).Width(220)
 		}
-		label := "Dark"
-		if appearance == AppearanceDark {
-			label = "Light"
-		}
-		if ui.Button(c, label).Clicked() {
-			a.mu.Lock()
-			a.appearance = NextAppearance(a.appearance)
-			a.mu.Unlock()
-		}
 	})
 	return chosen
-}
-
-func (a *App) cards(c *ui.Context, t *ui.Theme) {
-	ui.Text(c, "Overview").FontSize(28).Bold()
-	ui.Row(c).Gap(12).Children(func() {
-		a.card(c, t, "Nodes", a.shown.NodesText())
-		a.card(c, t, "Pods", a.shown.PodsText())
-		a.card(c, t, "Warnings", a.shown.WarningsText())
-		a.card(c, t, "CPU", a.shown.CPU)
-		a.card(c, t, "Memory", a.shown.Memory)
-	})
-}
-
-func (a *App) card(c *ui.Context, t *ui.Theme, title, value string) {
-	ui.Column(c).Padding(16).Gap(6).Radius(16).Background(t.Surface).Border(1, t.Border).Width(168).Children(func() {
-		ui.Text(c, title).TextColor(t.TextMuted)
-		ui.Text(c, value).FontSize(28).Bold()
-	})
 }
 
 func (a *App) confirmDialog(c *ui.Context, t *ui.Theme, confirm *Confirm) {

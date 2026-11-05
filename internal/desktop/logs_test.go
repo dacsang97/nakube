@@ -3,7 +3,9 @@ package desktop
 import "testing"
 
 func TestPodColorIsStable(t *testing.T) {
-	if PodColor("web-0") != PodColor("web-0") {
+	first := PodColor("web-0")
+	second := PodColor("web-0")
+	if first != second {
 		t.Fatal("pod color changed")
 	}
 	if PodColor("web-0") == PodColor("web-1") && PodColor("api-0") == PodColor("web-0") {
