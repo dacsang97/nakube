@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/views/overview"
 )
 
 // Confirm is a dialog's captured identity. Later watch updates do not
@@ -51,8 +52,12 @@ type App struct {
 	events   map[string]*corev1.Event
 	usage    cluster.Usage
 	usageErr error
+	samples  []overview.Sample
 
-	shown   Overview
+	overviewRole   string
+	overviewMetric string
+	overviewRange  string
+
 	confirm *Confirm
 
 	mode         string
@@ -112,18 +117,21 @@ func New(session *cluster.Session) *App {
 		session = cluster.NewSession()
 	}
 	return &App{
-		session:       session,
-		router:        ui.NewRouter("/overview"),
-		selected:      "overview",
-		appearance:    DefaultAppearance(),
-		pods:          map[string]*corev1.Pod{},
-		nodes:         map[string]*corev1.Node{},
-		events:        map[string]*corev1.Event{},
-		scaleTo:       "1",
-		forwardLocal:  "8080",
-		forwardRemote: "80",
-		rollbackRev:   "1",
-		helmNamespace: "default",
+		session:        session,
+		router:         ui.NewRouter("/overview"),
+		selected:       "overview",
+		appearance:     DefaultAppearance(),
+		pods:           map[string]*corev1.Pod{},
+		nodes:          map[string]*corev1.Node{},
+		events:         map[string]*corev1.Event{},
+		scaleTo:        "1",
+		forwardLocal:   "8080",
+		forwardRemote:  "80",
+		rollbackRev:    "1",
+		helmNamespace:  "default",
+		overviewRole:   overview.Worker,
+		overviewMetric: overview.CPU,
+		overviewRange:  "15m",
 	}
 }
 
@@ -206,6 +214,9 @@ func (a *App) startWatch(ctx context.Context) {
 	a.pods = map[string]*corev1.Pod{}
 	a.nodes = map[string]*corev1.Node{}
 	a.events = map[string]*corev1.Event{}
+	a.samples = nil
+	a.usage = cluster.Usage{}
+	a.usageErr = nil
 	a.mu.Unlock()
 	if err := a.session.Watch(wctx, a.onWatch); err != nil {
 		a.setErr(publicError(err))
@@ -214,19 +225,36 @@ func (a *App) startWatch(ctx context.Context) {
 
 func (a *App) refreshMetrics(ctx context.Context) {
 	go func() {
-		usage, err := a.session.Usage(ctx)
-		a.noteUsage(usage, err)
-		a.invalidate()
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			usage, err := a.session.Usage(ctx)
+			a.noteUsage(usage, err)
+			a.invalidate()
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
 	}()
 }
 
-// noteUsage records a metrics-client result. NotFound becomes the
-// unavailable card text and does not invent a number.
+// noteUsage records a metrics-client result. A missing API does not append
+// a sample, so the chart cannot invent a zero.
 func (a *App) noteUsage(usage cluster.Usage, err error) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.usage = usage
 	a.usageErr = err
-	a.mu.Unlock()
+	if err != nil || !usage.Available {
+		return
+	}
+	a.samples = append(a.samples, overview.Sample{
+		At:    time.Now(),
+		Nodes: append([]cluster.NodeUsage(nil), usage.Nodes...),
+	})
+	a.samples = overview.Trim(a.samples, time.Now())
 }
 
 func (a *App) onWatch(ev cluster.WatchEvent) {
@@ -308,8 +336,8 @@ func (a *App) View(c *ui.Context) { a.view(c) }
 
 func (a *App) view(c *ui.Context) {
 	a.mu.Lock()
-	a.shown = overviewFrom(a.nodes, a.pods, a.events, a.usage, a.usageErr)
-	contexts := append([]string(nil), a.contexts...)
+	snap := overview.From(a.nodes, a.pods, a.events, a.usage, a.usageErr, time.Now())
+	samples := append([]overview.Sample(nil), a.samples...)
 	current := a.current
 	errText := a.errText
 	prev := a.selected
@@ -320,26 +348,21 @@ func (a *App) view(c *ui.Context) {
 	}
 
 	t := c.Theme()
-	chosen := current
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(shellBackdrop(t)).Padding(shellGap).Gap(shellGap).Children(func() {
 		ui.Row(c).Shrink(0).FillHeight().Radius(shellRadius).Clip().Background(t.Surface).Border(1, t.Border).Children(func() {
 			a.drawActivityBar(c, t, current)
 			a.drawSide(c, t)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Padding(12, 16).Gap(12).Children(func() {
-			chosen = a.header(c, t, contexts, current)
 			if errText != "" {
 				ui.Text(c, errText).TextColor(t.Danger)
 			}
 			a.router.View(c, func(r *ui.Route) {
-				a.drawPage(c, t, r, current, confirm)
+				a.drawPage(c, t, r, current, confirm, snap, samples)
 			})
 		})
 	})
 
-	if chosen != current {
-		a.switchContext(chosen)
-	}
 	id := screenID(a.router.Path())
 	if id == prev {
 		return
@@ -352,7 +375,7 @@ func (a *App) view(c *ui.Context) {
 	a.loadList(id)
 }
 
-func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, confirm *Confirm) {
+func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, confirm *Confirm, shown overview.Snapshot, samples []overview.Sample) {
 	switch {
 	case r.Match("/catalog"):
 		r.Title("Catalog")
@@ -362,14 +385,14 @@ func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, 
 		a.drawSettings(c, t)
 	case r.Match("/overview"), r.Match("/"):
 		r.Title("Overview")
-		a.cards(c, t)
+		overview.Draw(c, t, shown, samples, current, &a.overviewRole, &a.overviewMetric, &a.overviewRange, time.Now(), a.openPage)
 	case r.Match("/{id}"):
 		id := r.Param("id")
 		r.Title(labelFor(id))
 		a.mu.Lock()
-		snap := a.snapshotLocked(id)
+		list := a.snapshotLocked(id)
 		a.mu.Unlock()
-		a.drawMain(c, t, id, snap)
+		a.drawMain(c, t, id, list)
 	default:
 		r.Title("Not found")
 		ui.Text(c, "Not found")
@@ -425,19 +448,6 @@ func screenID(path string) string {
 		return "overview"
 	}
 	return path
-}
-
-func (a *App) header(c *ui.Context, t *ui.Theme, contexts []string, current string) string {
-	chosen := current
-	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "NaKube").FontSize(22).Bold()
-		if len(contexts) == 0 {
-			ui.Text(c, "No contexts").TextColor(t.TextMuted)
-		} else {
-			ui.Select(c, &chosen, contexts).Width(220)
-		}
-	})
-	return chosen
 }
 
 func (a *App) confirmDialog(c *ui.Context, t *ui.Theme, confirm *Confirm) {

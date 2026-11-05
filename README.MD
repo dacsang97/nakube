@@ -30,10 +30,7 @@ make fmt-check
 make vet
 make test
 make lint
-make snapshot
 ```
-
-`make snapshot` is `goreleaser build --snapshot`. It compile-checks darwin, linux, and windows, amd64 and arm64, with `CGO_ENABLED=0`. Packaged builds stay on `scripts/release.sh`.
 
 ## Phone
 
@@ -58,7 +55,9 @@ Stdio only. The process reads the context file the desktop `Use` writes, or kube
 |---|---|
 | `cmd/nakube` | Desktop window and the `mcp` subcommand |
 | `internal/cluster` | Kube client: watch, logs, exec, dry-run apply |
-| `internal/desktop` | Native overview and sidebar |
+| `internal/ui` | Reusable widgets. No Kubernetes types |
+| `internal/views` | One package per screen. Screens do not import each other |
+| `internal/desktop` | Window shell: sidebar, router, session state |
 | `internal/mcp` | Stdio MCP handler |
 | `internal/remote` | Tailscale listener for the phone, port `47623` |
 

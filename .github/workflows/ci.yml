@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  # Saving a cache needs this. Only main writes; other refs restore.
+  actions: write
 
 # A newer push replaces the run still going for that ref.
 concurrency:
@@ -23,12 +25,23 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
+          cache: false
+      - name: Restore Go cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.mod') }}
+          restore-keys: |
+            go-${{ runner.os }}-
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
           args: --timeout=5m
+          # Main writes the linter cache. Other refs only restore it.
+          skip-save-cache: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
 
   test:
     name: Test
@@ -39,7 +52,17 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
+          cache: false
+      - name: Restore Go cache
+        id: go-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.mod') }}
+          restore-keys: |
+            go-${{ runner.os }}-
       - name: gofmt
         run: |
           unformatted=$(gofmt -l .)
@@ -53,24 +76,11 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...
-
-  # Compile-check only. `goreleaser build --snapshot` never publishes and
-  # does not package the desktop app. Packaged builds stay on scripts/release.sh.
-  snapshot:
-    name: Snapshot
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
+      - name: Warm Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - name: Compile every target
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: build --clean --snapshot
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.mod') }}

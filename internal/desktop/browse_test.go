@@ -7,18 +7,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/views/resource"
 )
 
 func TestActionsFollowKind(t *testing.T) {
-	pods := actionsFor("Pod")
+	pods := resource.Actions("Pod")
 	if !hasAction(pods, "logs") || !hasAction(pods, "exec") || hasAction(pods, "sync") {
 		t.Fatalf("pod actions = %v", pods)
 	}
-	deps := actionsFor("Deployment")
+	deps := resource.Actions("Deployment")
 	if !hasAction(deps, "scale") || !hasAction(deps, "restart") || hasAction(deps, "logs") {
 		t.Fatalf("deployment actions = %v", deps)
 	}
-	if actionsFor("") != nil {
+	if resource.Actions("") != nil {
 		t.Fatal("summary rows should have no actions")
 	}
 }

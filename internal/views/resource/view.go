@@ -1,0 +1,152 @@
+package resource
+
+import "github.com/egoist/mygo/ui"
+
+// Row is one table row. Kind chooses the action buttons.
+type Row struct {
+	Kind  string
+	Cells []string
+}
+
+// List is a generic resource table plus the actions for the selected row.
+type List struct {
+	Title    string
+	Err      string
+	Notice   string
+	Empty    string
+	Loading  bool
+	Columns  []string
+	Rows     []Row
+	Selected *int
+	ScaleTo  *string
+	Local    *string
+	Remote   *string
+	Revision *string
+	OnAction func(index int, action string)
+}
+
+// Draw paints the list. It does not load it.
+func Draw(c *ui.Context, t *ui.Theme, list List) {
+	ui.Text(c, list.Title).FontSize(22).Bold()
+	switch {
+	case list.Err != "":
+		ui.Text(c, list.Err).TextColor(t.Danger)
+	case list.Notice != "":
+		ui.Text(c, list.Notice).TextColor(t.TextMuted)
+	case list.Loading && len(list.Rows) == 0:
+		ui.Text(c, "Loading").TextColor(t.TextMuted)
+	case len(list.Rows) == 0:
+		text := list.Empty
+		if text == "" {
+			text = "None"
+		}
+		ui.Text(c, text).TextColor(t.TextMuted)
+	}
+	if len(list.Rows) == 0 || list.Selected == nil {
+		return
+	}
+	if *list.Selected < 0 || *list.Selected >= len(list.Rows) {
+		*list.Selected = 0
+	}
+	row := list.Rows[*list.Selected]
+	inputs(c, row.Kind, list)
+	actions(c, *list.Selected, row.Kind, list.OnAction)
+	ui.Table(c, &ui.ListState{Selected: list.Selected}, columns(list.Columns), len(list.Rows), func(i, col int) {
+		ui.Text(c, list.Rows[i].Cells[col])
+	}).Fill()
+}
+
+func inputs(c *ui.Context, kind string, list List) {
+	switch kind {
+	case "Deployment", "StatefulSet", "ReplicaSet":
+		ui.TextInput(c, list.ScaleTo).Label("Replicas").Width(80)
+	case "Pod", "Service":
+		ui.Row(c).Gap(8).Children(func() {
+			ui.TextInput(c, list.Local).Label("Local").Width(80)
+			ui.TextInput(c, list.Remote).Label("Remote").Width(80)
+		})
+	case "Application", "Release":
+		ui.TextInput(c, list.Revision).Label("Revision").Width(80)
+	}
+}
+
+func actions(c *ui.Context, index int, kind string, on func(int, string)) {
+	names := Actions(kind)
+	if len(names) == 0 {
+		return
+	}
+	ui.Row(c).Gap(8).Children(func() {
+		for _, action := range names {
+			if ui.Button(c, actionLabel(action)).Clicked() && on != nil {
+				on(index, action)
+			}
+		}
+	})
+}
+
+func Actions(kind string) []string {
+	switch kind {
+	case "Pod":
+		return []string{"logs", "exec", "yaml", "forward", "delete"}
+	case "Deployment", "StatefulSet", "ReplicaSet":
+		return []string{"yaml", "scale", "restart", "delete"}
+	case "DaemonSet":
+		return []string{"yaml", "restart", "delete"}
+	case "Service":
+		return []string{"yaml", "forward", "delete"}
+	case "Application":
+		return []string{"sync", "rollback", "yaml", "delete"}
+	case "Release":
+		return []string{"rollback", "uninstall"}
+	case "Forward":
+		return []string{"stop"}
+	case "":
+		return nil
+	default:
+		return []string{"yaml", "delete"}
+	}
+}
+
+func actionLabel(action string) string {
+	switch action {
+	case "logs":
+		return "Logs"
+	case "exec":
+		return "Exec"
+	case "yaml":
+		return "YAML"
+	case "forward":
+		return "Forward"
+	case "delete":
+		return "Delete"
+	case "scale":
+		return "Scale"
+	case "restart":
+		return "Restart"
+	case "sync":
+		return "Sync"
+	case "rollback":
+		return "Rollback"
+	case "uninstall":
+		return "Uninstall"
+	case "stop":
+		return "Stop"
+	default:
+		return action
+	}
+}
+
+func columns(titles []string) []ui.TableColumn {
+	out := make([]ui.TableColumn, len(titles))
+	for i, title := range titles {
+		width := float32(140)
+		switch title {
+		case "Name", "Message", "Chart":
+			width = 220
+		case "Age", "Phase", "Sync", "Health", "Ready", "Local", "Remote", "Revision":
+			width = 90
+		}
+		out[i] = ui.TableColumn{Title: title, Width: width}
+	}
+	return out
+}

@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/views/resource"
 )
 
 // listRow is one table row. Actions use Identity, captured when the row was built.
@@ -47,7 +48,6 @@ func (a *App) drawMain(c *ui.Context, t *ui.Theme, id string, snap listSnap) {
 		return
 	}
 	if id == "overview" || id == "" {
-		a.cards(c, t)
 		return
 	}
 	a.drawList(c, t, id, snap)
@@ -57,110 +57,30 @@ func (a *App) drawMain(c *ui.Context, t *ui.Theme, id string, snap listSnap) {
 }
 
 func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSnap) {
-	ui.Text(c, labelFor(selected)).FontSize(22).Bold()
-	switch {
-	case snap.err != "":
-		ui.Text(c, snap.err).TextColor(t.Danger)
-	case snap.notice != "":
-		ui.Text(c, snap.notice).TextColor(t.TextMuted)
-	case snap.loading && len(snap.rows) == 0:
-		ui.Text(c, "Loading").TextColor(t.TextMuted)
-	case len(snap.rows) == 0:
-		ui.Text(c, emptyText(selected)).TextColor(t.TextMuted)
+	rows := make([]resource.Row, len(snap.rows))
+	for i, row := range snap.rows {
+		rows[i] = resource.Row{Kind: row.Identity.Kind, Cells: row.Cells}
 	}
-	if len(snap.rows) == 0 {
-		return
-	}
-	if a.row < 0 || a.row >= len(snap.rows) {
-		a.row = 0
-	}
-	row := snap.rows[a.row]
-	a.actionInputs(c, row.Identity.Kind)
-	a.actionBar(c, row)
-	cols := tableColumns(snap.columns)
-	ui.Table(c, &ui.ListState{Selected: &a.row}, cols, len(snap.rows), func(i, col int) {
-		ui.Text(c, snap.rows[i].Cells[col])
-	}).Fill()
-}
-
-func (a *App) actionInputs(c *ui.Context, kind string) {
-	switch kind {
-	case "Deployment", "StatefulSet", "ReplicaSet":
-		ui.TextInput(c, &a.scaleTo).Label("Replicas").Width(80)
-	case "Pod", "Service":
-		ui.Row(c).Gap(8).Children(func() {
-			ui.TextInput(c, &a.forwardLocal).Label("Local").Width(80)
-			ui.TextInput(c, &a.forwardRemote).Label("Remote").Width(80)
-		})
-	case "Application", "Release":
-		ui.TextInput(c, &a.rollbackRev).Label("Revision").Width(80)
-	}
-}
-
-func (a *App) actionBar(c *ui.Context, row listRow) {
-	actions := actionsFor(row.Identity.Kind)
-	if len(actions) == 0 {
-		return
-	}
-	ui.Row(c).Gap(8).Children(func() {
-		for _, action := range actions {
-			if ui.Button(c, actionLabel(action)).Clicked() {
-				a.runAction(row, action)
+	resource.Draw(c, t, resource.List{
+		Title:    labelFor(selected),
+		Err:      snap.err,
+		Notice:   snap.notice,
+		Empty:    emptyText(selected),
+		Loading:  snap.loading,
+		Columns:  snap.columns,
+		Rows:     rows,
+		Selected: &a.row,
+		ScaleTo:  &a.scaleTo,
+		Local:    &a.forwardLocal,
+		Remote:   &a.forwardRemote,
+		Revision: &a.rollbackRev,
+		OnAction: func(index int, action string) {
+			if index < 0 || index >= len(snap.rows) {
+				return
 			}
-		}
+			a.runAction(snap.rows[index], action)
+		},
 	})
-}
-
-func actionsFor(kind string) []string {
-	switch kind {
-	case "Pod":
-		return []string{"logs", "exec", "yaml", "forward", "delete"}
-	case "Deployment", "StatefulSet", "ReplicaSet":
-		return []string{"yaml", "scale", "restart", "delete"}
-	case "DaemonSet":
-		return []string{"yaml", "restart", "delete"}
-	case "Service":
-		return []string{"yaml", "forward", "delete"}
-	case "Application":
-		return []string{"sync", "rollback", "yaml", "delete"}
-	case "Release":
-		return []string{"rollback", "uninstall"}
-	case "Forward":
-		return []string{"stop"}
-	case "":
-		return nil
-	default:
-		return []string{"yaml", "delete"}
-	}
-}
-
-func actionLabel(action string) string {
-	switch action {
-	case "logs":
-		return "Logs"
-	case "exec":
-		return "Exec"
-	case "yaml":
-		return "YAML"
-	case "forward":
-		return "Forward"
-	case "delete":
-		return "Delete"
-	case "scale":
-		return "Scale"
-	case "restart":
-		return "Restart"
-	case "sync":
-		return "Sync"
-	case "rollback":
-		return "Rollback"
-	case "uninstall":
-		return "Uninstall"
-	case "stop":
-		return "Stop"
-	default:
-		return action
-	}
 }
 
 func emptyText(id string) string {
@@ -688,21 +608,6 @@ func forwardTable(items []*cluster.Forward) ([]string, []listRow) {
 		})
 	}
 	return []string{"Namespace", "Pod", "Local", "Remote"}, out
-}
-
-func tableColumns(titles []string) []ui.TableColumn {
-	out := make([]ui.TableColumn, len(titles))
-	for i, title := range titles {
-		width := float32(140)
-		switch title {
-		case "Name", "Message", "Chart":
-			width = 220
-		case "Age", "Phase", "Sync", "Health", "Ready", "Local", "Remote", "Revision":
-			width = 90
-		}
-		out[i] = ui.TableColumn{Title: title, Width: width}
-	}
-	return out
 }
 
 func readyCount(pod *corev1.Pod) string {

@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 
 	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/views/catalog"
 )
 
 type catalogState struct {
@@ -24,109 +25,38 @@ type catalogState struct {
 func (a *App) drawCatalog(c *ui.Context, t *ui.Theme, current string) {
 	a.ensureCatalog()
 	a.syncCatalogIfDue()
+	a.ensurePaste()
 	dir, _ := cluster.DefaultKubeDir()
-	ui.Scroll(c).Grow(1).FillHeight().Children(func() {
-		ui.Column(c).Gap(16).Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
-				ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-					ui.Text(c, "Catalog").FontSize(22).Bold()
-					ui.Text(c, "Files in "+kubeDirLabel(dir)+" show up as they appear. Added files stay outside that folder.").TextColor(t.TextMuted)
-				})
-				if ui.Button(c, "Done").Clicked() {
-					a.closeCatalog()
-				}
-			})
-			if a.catalogErr != "" {
-				ui.Text(c, a.catalogErr).TextColor(t.Danger)
-			}
-			infos, _, err := a.session.ContextInfos()
-			if err != nil {
-				ui.Text(c, publicError(err)).TextColor(t.Danger)
-				infos = nil
-			}
-			if len(infos) == 0 {
-				ui.Text(c, "No contexts").TextColor(t.TextMuted)
-			} else {
-				ui.Row(c).Wrap().Gap(12).Children(func() {
-					for _, info := range infos {
-						a.drawContextCard(c, t, info, current)
-					}
-				})
-			}
-			ui.Text(c, "Add a context").FontSize(16).Bold()
-			ui.Row(c).Gap(12).AlignItems(ui.Start).Children(func() {
-				ui.Column(c).Grow(1).MinWidth(0).Padding(12).Gap(8).Radius(12).Border(1, t.Border).Background(t.Surface).Children(func() {
-					ui.Text(c, "From a file").Bold()
-					ui.Text(c, "A kubeconfig file or a folder of them.").TextColor(t.TextMuted)
-					ui.Row(c).Gap(8).Children(func() {
-						ui.TextInput(c, &a.addPath).Placeholder("/path/to/kubeconfig or folder").Grow(1).MinWidth(0)
-						if ui.Button(c, "Add file").Clicked() {
-							a.addCatalogPath()
-						}
-					})
-				})
-				ui.Column(c).Grow(1).MinWidth(0).Padding(12).Gap(8).Radius(12).Border(1, t.Border).Background(t.Surface).Children(func() {
-					ui.Text(c, "Paste kubeconfig").Bold()
-					a.ensurePaste()
-					editor.View(c, a.paste).Height(96)
-					if ui.Button(c, "Add pasted kubeconfig").Clicked() {
-						a.importPaste()
-					}
-				})
-			})
-		})
-	})
-}
-
-func (a *App) drawContextCard(c *ui.Context, t *ui.Theme, info cluster.ContextInfo, current string) {
-	active := info.Name == current
-	border := t.Border
-	if active {
-		border = t.Accent
+	page := catalog.Page{
+		DirLabel: kubeDirLabel(dir),
+		Err:      a.catalogErr,
+		AddPath:  &a.addPath,
+		Paste:    a.paste,
+		Pin:      IconNamed("pin"),
+		OnDone:   a.closeCatalog,
+		OnAdd:    a.addCatalogPath,
+		OnPaste:  a.importPaste,
+		OnPin:    a.togglePin,
+		OnOpen: func(name string) {
+			a.switchContext(name)
+			a.openPage("overview")
+		},
 	}
-	card := ui.Column(c).Width(280).Padding(14).Gap(8).Radius(12).Border(1, border).Background(t.Surface)
-	card.Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			avatar := ui.Box(c).Width(36).Height(36).Radius(8).Shrink(0).AlignItems(ui.Center).Justify(ui.Center)
-			if active {
-				avatar.Background(t.Accent)
-			} else {
-				avatar.Background(t.SurfacePressed)
-			}
-			avatar.Children(func() {
-				letter := ui.Text(c, railLabel(info.Name)).Bold()
-				if active {
-					letter.TextColor(t.AccentText)
-				}
-			})
-			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				ui.Text(c, info.Name).Bold()
-				if active {
-					ui.Badge(c, "Active")
-				}
-			})
-			pin := "Pin"
-			if a.pinned(info.Name) {
-				pin = "Unpin"
-			}
-			pinBtn := ui.Button(c, "").Size(28, 28).Padding(0).AlignItems(ui.Center).Justify(ui.Center).Shrink(0).Tooltip(pin)
-			pinBtn.Children(func() {
-				ui.Icon(c, IconNamed("pin")).Size(14, 14)
-			})
-			if pinBtn.Clicked() {
-				a.togglePin(info.Name)
-			}
-		})
-		if detail := contextDetail(info); detail != "" {
-			ui.Text(c, detail).FontSize(12).TextColor(t.TextMuted)
-		} else {
-			ui.Text(c, "No server").FontSize(12).TextColor(t.TextMuted)
-		}
-	})
-	if card.Clicked() {
-		a.switchContext(info.Name)
-		a.openPage("overview")
+	infos, _, err := a.session.ContextInfos()
+	if err != nil {
+		page.LoadErr = publicError(err)
+		infos = nil
 	}
+	for _, info := range infos {
+		page.Contexts = append(page.Contexts, catalog.Context{
+			Name:   info.Name,
+			Letter: railLabel(info.Name),
+			Detail: contextDetail(info),
+			Active: info.Name == current,
+			Pinned: a.pinned(info.Name),
+		})
+	}
+	catalog.Draw(c, t, page)
 }
 
 func kubeDirLabel(dir string) string {
