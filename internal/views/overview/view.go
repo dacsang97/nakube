@@ -134,6 +134,10 @@ func countLine(c *ui.Context, t *ui.Theme, snap Snapshot, contextName string, no
 		} else {
 			ui.Text(c, snap.PodsText()+" pods").TextColor(t.TextMuted)
 		}
+		if !nodes && len(snap.NotReady) > 0 {
+			ui.Text(c, "·").TextColor(t.TextMuted)
+			ui.Text(c, snap.NotReady[0]+" not ready").TextColor(t.TextMuted)
+		}
 	})
 }
 
@@ -148,18 +152,6 @@ func donutSkeletonRow(c *ui.Context, t *ui.Theme, colors kit.Series, pods bool) 
 		})
 	})
 	_ = pods
-}
-
-func subtitle(snap Snapshot, contextName string) string {
-	name := contextName
-	if name == "" {
-		name = "No context"
-	}
-	line := name + "  ·  " + snap.NodesText() + " nodes  ·  " + snap.PodsText() + " pods"
-	if len(snap.NotReady) > 0 {
-		line += "  ·  " + snap.NotReady[0] + " not ready"
-	}
-	return line
 }
 
 func filters(c *ui.Context, shown Presented, role, metric, window *string) {

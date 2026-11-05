@@ -106,6 +106,7 @@ func header(c *ui.Context, t *ui.Theme, title string, page Page) {
 		}
 	})
 }
+
 func sectionLoading(page Page) bool {
 	return page.AppsLoading || page.SetsLoading || page.ProjectsLoading || page.ReposLoading || page.ClustersLoading
 }
