@@ -147,6 +147,7 @@
 				CODE_SIGNING_REQUIRED = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NakubeRemote/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NaKube;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -167,6 +168,7 @@
 				CODE_SIGNING_REQUIRED = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NakubeRemote/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NaKube;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (

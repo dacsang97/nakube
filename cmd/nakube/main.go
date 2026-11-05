@@ -22,7 +22,7 @@ func main() {
 	app.RestoreAppearance()
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:     "Nakube",
+			Title:     "NaKube",
 			Width:     1100,
 			Height:    720,
 			MinWidth:  800,

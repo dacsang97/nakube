@@ -98,7 +98,7 @@ func TestEmptyContextView(t *testing.T) {
 	if !tt.HasText("no kube context is configured") {
 		t.Fatalf("texts %q", tt.Texts())
 	}
-	if !tt.HasText("Overview") || !tt.HasText("Workloads") || !tt.HasText("Pods") {
+	if !tt.HasText("NaKube") || !tt.HasText("Overview") || !tt.HasText("Workloads") || !tt.HasText("Pods") {
 		t.Fatalf("missing menu, texts %q", tt.Texts())
 	}
 	if !tt.HasText("MENU") {

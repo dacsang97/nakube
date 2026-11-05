@@ -80,7 +80,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("Nakube")
+            .navigationTitle("NaKube")
             .confirmationDialog(pending?.title ?? "", isPresented: pendingPresented) {
                 Button(pending?.verb ?? "Confirm", role: .destructive) {
                     Task { await confirmPending() }

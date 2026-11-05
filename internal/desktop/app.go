@@ -430,7 +430,7 @@ func screenID(path string) string {
 func (a *App) header(c *ui.Context, t *ui.Theme, contexts []string, current string) string {
 	chosen := current
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "Nakube").FontSize(22).Bold()
+		ui.Text(c, "NaKube").FontSize(22).Bold()
 		if len(contexts) == 0 {
 			ui.Text(c, "No contexts").TextColor(t.TextMuted)
 		} else {
