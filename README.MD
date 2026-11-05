@@ -30,10 +30,7 @@ make fmt-check
 make vet
 make test
 make lint
-make snapshot
 ```
-
-`make snapshot` is `goreleaser build --snapshot`. It compile-checks darwin, linux, and windows, amd64 and arm64, with `CGO_ENABLED=0`. Packaged builds stay on `scripts/release.sh`.
 
 ## Phone
 
