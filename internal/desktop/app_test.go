@@ -108,6 +108,7 @@ func TestEmptyContextView(t *testing.T) {
 		t.Fatalf("missing metrics card, texts %q", tt.Texts())
 	}
 }
+
 func TestMenuSearchFilters(t *testing.T) {
 	a := New(cluster.NewSession())
 	a.menuQuery = "virtual"

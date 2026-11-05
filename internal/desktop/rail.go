@@ -129,53 +129,6 @@ func (a *App) drawContextCard(c *ui.Context, t *ui.Theme, info cluster.ContextIn
 	}
 }
 
-func (a *App) drawContextRow(c *ui.Context, t *ui.Theme, info cluster.ContextInfo, current string) {
-	active := info.Name == current
-	border := t.Border
-	if active {
-		border = t.Accent
-	}
-	ui.Row(c).Gap(8).Padding(10).Radius(10).Border(1, border).Background(t.Surface).AlignItems(ui.Center).Children(func() {
-		open := ui.Button(c, "").Grow(1).MinWidth(0).Padding(0).Background(ui.Transparent).Border(0, ui.Transparent).Tooltip("Open " + info.Name)
-		open.Children(func() {
-			avatar := ui.Box(c).Width(36).Height(36).Radius(8).Shrink(0).AlignItems(ui.Center).Justify(ui.Center)
-			if active {
-				avatar.Background(t.Accent)
-			} else {
-				avatar.Background(t.SurfacePressed)
-			}
-			avatar.Children(func() {
-				letter := ui.Text(c, railLabel(info.Name)).Bold()
-				if active {
-					letter.TextColor(t.AccentText)
-				}
-			})
-			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, info.Name).Bold()
-					if active {
-						ui.Badge(c, "Active")
-					}
-				})
-				if detail := contextDetail(info); detail != "" {
-					ui.Text(c, detail).TextColor(t.TextMuted)
-				}
-			})
-		})
-		if open.Clicked() {
-			a.switchContext(info.Name)
-			a.openPage("overview")
-		}
-		pin := "Pin"
-		if a.pinned(info.Name) {
-			pin = "Unpin"
-		}
-		if ui.Button(c, pin).Clicked() {
-			a.togglePin(info.Name)
-		}
-	})
-}
-
 func kubeDirLabel(dir string) string {
 	home, err := os.UserHomeDir()
 	if err != nil || dir == "" {
