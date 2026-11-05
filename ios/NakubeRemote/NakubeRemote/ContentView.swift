@@ -31,6 +31,7 @@ struct ContentView: View {
     @State private var pods: [PodRow] = []
     @State private var apps: [ArgoRow] = []
     @State private var errorText = ""
+    @State private var loading = false
     @State private var pending: PendingAction?
 
     var body: some View {
@@ -40,12 +41,15 @@ struct ContentView: View {
                     TextField("MagicDNS name", text: $host)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Button("Refresh") { Task { await refresh() } }
+                    Button(loading ? "Refreshing…" : "Refresh") { Task { await refresh() } }
+                        .disabled(loading)
                 }
                 if !errorText.isEmpty {
                     Section { Text(errorText).foregroundStyle(.red) }
                 }
-                if let overview {
+                if loading && overview == nil && errorText.isEmpty {
+                    loadingSections
+                } else if let overview {
                     Section("Overview") {
                         LabeledContent("Context", value: overview.context)
                         LabeledContent("Nodes", value: overview.nodes)
@@ -55,27 +59,29 @@ struct ContentView: View {
                         LabeledContent("Memory", value: overview.memory)
                     }
                 }
-                Section("Pods") {
-                    ForEach(pods) { pod in
-                        VStack(alignment: .leading) {
-                            Text(pod.name)
-                            Text("\(pod.namespace) · \(pod.phase)").font(.caption).foregroundStyle(.secondary)
-                        }
-                        .swipeActions {
-                            Button("Delete", role: .destructive) {
-                                pending = PendingAction(pod: pod, restart: false)
+                if !(loading && overview == nil && errorText.isEmpty) {
+                    Section("Pods") {
+                        ForEach(pods) { pod in
+                            VStack(alignment: .leading) {
+                                Text(pod.name)
+                                Text("\(pod.namespace) · \(pod.phase)").font(.caption).foregroundStyle(.secondary)
                             }
-                            Button("Restart") {
-                                pending = PendingAction(pod: pod, restart: true)
+                            .swipeActions {
+                                Button("Delete", role: .destructive) {
+                                    pending = PendingAction(pod: pod, restart: false)
+                                }
+                                Button("Restart") {
+                                    pending = PendingAction(pod: pod, restart: true)
+                                }
                             }
                         }
                     }
-                }
-                Section("Argo") {
-                    ForEach(apps) { app in
-                        VStack(alignment: .leading) {
-                            Text(app.name)
-                            Text("\(app.namespace) · \(app.sync) · \(app.health)").font(.caption).foregroundStyle(.secondary)
+                    Section("Argo") {
+                        ForEach(apps) { app in
+                            VStack(alignment: .leading) {
+                                Text(app.name)
+                                Text("\(app.namespace) · \(app.sync) · \(app.health)").font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -92,11 +98,43 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private var loadingSections: some View {
+        Group {
+            Section("Overview") {
+                ForEach(["Context", "Nodes", "Pods", "Warnings", "CPU", "Memory"], id: \.self) { label in
+                    LabeledContent(label, value: "000000")
+                }
+            }
+            Section("Pods") {
+                ForEach(0..<4, id: \.self) { _ in
+                    VStack(alignment: .leading) {
+                        Text("pod-name")
+                        Text("namespace · Running").font(.caption)
+                    }
+                }
+            }
+            Section("Argo") {
+                ForEach(0..<3, id: \.self) { _ in
+                    VStack(alignment: .leading) {
+                        Text("application")
+                        Text("namespace · Synced · Healthy").font(.caption)
+                    }
+                }
+            }
+        }
+        .redacted(reason: .placeholder)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading cluster")
+    }
+
     private var pendingPresented: Binding<Bool> {
         Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })
     }
 
     private func refresh() async {
+        loading = true
+        defer { loading = false }
         errorText = ""
         guard let base = baseURL else {
             errorText = "Enter the desktop MagicDNS name."

@@ -27,6 +27,7 @@ func (a *App) drawLogs(c *ui.Context, t *ui.Theme) {
 		Filter:  &a.logFilter,
 		Follow:  &a.logFollow,
 		Invalid: err != nil,
+		Loading: a.logLoading,
 		Lines:   lines,
 		OnBack:  a.leaveOverlay,
 	})
@@ -38,19 +39,29 @@ func (a *App) openLogs(namespace, name, container string) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.logCancel = cancel
+	a.logGen++
+	gen := a.logGen
 	a.mode = "logs"
 	a.logLines = nil
+	a.logLoading = true
 	a.logFollow = true
 	a.logPod = name
 	go func() {
 		err := a.session.StreamLogs(ctx, namespace, name, container, true, 200, func(lines []string) {
 			a.mu.Lock()
+			a.logLoading = false
 			for _, line := range lines {
 				a.logLines = append(a.logLines, LogLine{Pod: name, Text: line})
 			}
 			a.mu.Unlock()
 			a.invalidate()
 		})
+		a.mu.Lock()
+		if a.logGen == gen {
+			a.logLoading = false
+		}
+		a.mu.Unlock()
+		a.invalidate()
 		if err != nil && ctx.Err() == nil {
 			a.setErr(publicError(err))
 		}
@@ -121,6 +132,7 @@ func (a *App) drawYAML(c *ui.Context, t *ui.Theme) {
 		page.Kind = a.yaml.Identity.Kind
 		page.State = a.yaml.State
 		page.Diff = a.yaml.Diff
+		page.Pending = a.yaml.Pending
 		page.OnReveal = func() {
 			a.secretReveal = !a.secretReveal
 			a.openYAML(a.yaml.Identity)
@@ -177,6 +189,9 @@ func (a *App) dryRunYAML() {
 		return
 	}
 	body := a.yaml.State.Buffer.String()
+	a.yaml.Pending = true
+	a.yaml.Diff = nil
+	a.invalidate()
 	go func() {
 		preview, err := a.session.DryRunApply(context.Background(), body)
 		a.mu.Lock()
@@ -184,6 +199,7 @@ func (a *App) dryRunYAML() {
 		if a.yaml == nil {
 			return
 		}
+		a.yaml.Pending = false
 		if err != nil {
 			a.yaml.Err = publicError(err)
 			a.invalidate()
@@ -214,6 +230,7 @@ func (a *App) drawHelm(c *ui.Context, t *ui.Theme) {
 		Diff:      a.helmDiff,
 		Err:       a.helmErr,
 		Dry:       a.helmDry,
+		Loading:   a.helmBusy,
 		OnDryRun: func() {
 			a.helmDry = true
 			a.runHelm(true)
@@ -221,6 +238,7 @@ func (a *App) drawHelm(c *ui.Context, t *ui.Theme) {
 		OnCancel: func() {
 			a.helmDry = false
 			a.helmDiff = nil
+			a.helmBusy = false
 		},
 		OnInstall: func() {
 			a.runHelm(false)
@@ -242,10 +260,13 @@ func (a *App) runHelm(dry bool) {
 	if !dry && !a.helmDry {
 		return
 	}
+	a.helmBusy = true
+	a.invalidate()
 	go func() {
 		res, err := a.session.HelmInstall(context.Background(), req)
 		a.mu.Lock()
 		defer a.mu.Unlock()
+		a.helmBusy = false
 		if err != nil {
 			a.helmErr = publicError(err)
 			a.invalidate()
@@ -292,6 +313,7 @@ type yamlScreen struct {
 	Diff     *editor.DiffState
 	Confirm  YAMLConfirm
 	Err      string
+	Pending  bool
 }
 
 func (a *App) applyYAML(id cluster.Identity, body string) error {

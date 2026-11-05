@@ -3,6 +3,8 @@ package term
 import (
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
+
+	kit "github.com/dacsang97/nakube/internal/ui"
 )
 
 // Page is the exec terminal. The shell owns the connection.
@@ -25,8 +27,16 @@ func Draw(c *ui.Context, t *ui.Theme, page Page) {
 		return
 	}
 	if page.Term == nil {
-		ui.Text(c, "Connecting").TextColor(t.TextMuted)
+		termSkeleton(c, t)
 		return
 	}
 	terminal.View(c, page.Term).Fill()
+}
+
+func termSkeleton(c *ui.Context, t *ui.Theme) {
+	kit.Status(c, "Connecting").FillHeight().Radius(8).Background(t.Surface).Border(1, t.Border).Padding(12).Children(func() {
+		kit.Bar(c, t, 180, 12)
+		kit.Bar(c, t, 260, 12)
+		kit.Bar(c, t, 120, 12)
+	})
 }

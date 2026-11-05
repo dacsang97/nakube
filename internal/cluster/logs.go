@@ -39,6 +39,9 @@ func (s *Session) StreamLogs(ctx context.Context, namespace, pod, container stri
 		return err
 	}
 	defer stream.Close()
+	if onBatch != nil {
+		onBatch(nil)
+	}
 	return scanLogStream(ctx, stream, onBatch)
 }
 

@@ -3,6 +3,8 @@ package helm
 import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
+
+	kit "github.com/dacsang97/nakube/internal/ui"
 )
 
 // Form is the install panel under the release list.
@@ -14,6 +16,7 @@ type Form struct {
 	Diff      *editor.DiffState
 	Err       string
 	Dry       bool
+	Loading   bool
 	OnDryRun  func()
 	OnCancel  func()
 	OnInstall func()
@@ -41,6 +44,11 @@ func Draw(c *ui.Context, t *ui.Theme, form Form) {
 			form.OnInstall()
 		}
 	})
+	if form.Loading && form.Diff == nil {
+		kit.Status(c, "Loading").Children(func() {
+			kit.Block(c, t, 160, 8)
+		})
+	}
 	if form.Diff != nil {
 		editor.DiffView(c, form.Diff).Height(160)
 	}

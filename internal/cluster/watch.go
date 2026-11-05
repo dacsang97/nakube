@@ -54,7 +54,8 @@ func (s *Session) Watch(ctx context.Context, h WatchHandler) error {
 	s.mu.Unlock()
 
 	factory := informers.NewSharedInformerFactoryWithOptions(cs, 0, informers.WithTransform(stripManagedFields))
-	if err := s.bindInformers(factory, gen, h); err != nil {
+	syncs, err := s.bindInformers(factory, gen, h)
+	if err != nil {
 		s.StopWatch()
 		return err
 	}
@@ -63,6 +64,7 @@ func (s *Session) Watch(ctx context.Context, h WatchHandler) error {
 	s.mu.Lock()
 	if s.watchGen == gen {
 		s.factory = factory
+		s.watchSync = syncs
 	}
 	s.mu.Unlock()
 	return nil
@@ -75,7 +77,7 @@ func (s *Session) StopWatch() {
 	s.stopWatchLocked()
 }
 
-func (s *Session) bindInformers(factory informers.SharedInformerFactory, gen uint64, h WatchHandler) error {
+func (s *Session) bindInformers(factory informers.SharedInformerFactory, gen uint64, h WatchHandler) ([]namedSync, error) {
 	core := factory.Core().V1()
 	apps := factory.Apps().V1()
 	batch := factory.Batch().V1()
@@ -93,12 +95,14 @@ func (s *Session) bindInformers(factory informers.SharedInformerFactory, gen uin
 		{batch.Jobs().Informer(), "Job"},
 		{batch.CronJobs().Informer(), "CronJob"},
 	}
+	syncs := make([]namedSync, 0, len(handlers))
 	for _, item := range handlers {
 		if err := bind(item.inf, item.kind, gen, s, h); err != nil {
-			return err
+			return nil, err
 		}
+		syncs = append(syncs, namedSync{kind: item.kind, inf: item.inf})
 	}
-	return nil
+	return syncs, nil
 }
 
 func bind(inf cache.SharedIndexInformer, kind string, gen uint64, s *Session, h WatchHandler) error {

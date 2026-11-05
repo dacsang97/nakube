@@ -50,6 +50,10 @@ func (a *App) drawMain(c *ui.Context, t *ui.Theme, id string, snap listSnap) {
 	if id == "overview" || id == "" {
 		return
 	}
+	if isArgoScreen(id) {
+		a.drawArgo(c, t, id)
+		return
+	}
 	a.drawList(c, t, id, snap)
 	if id == "helm" {
 		a.drawHelm(c, t)
@@ -57,6 +61,10 @@ func (a *App) drawMain(c *ui.Context, t *ui.Theme, id string, snap listSnap) {
 }
 
 func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSnap) {
+	cols := snap.columns
+	if snap.loading && len(cols) == 0 {
+		cols = placeholderColumns(selected)
+	}
 	rows := make([]resource.Row, len(snap.rows))
 	for i, row := range snap.rows {
 		rows[i] = resource.Row{Kind: row.Identity.Kind, Cells: row.Cells}
@@ -67,7 +75,7 @@ func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSna
 		Notice:   snap.notice,
 		Empty:    emptyText(selected),
 		Loading:  snap.loading,
-		Columns:  snap.columns,
+		Columns:  cols,
 		Rows:     rows,
 		Selected: &a.row,
 		ScaleTo:  &a.scaleTo,
@@ -91,6 +99,40 @@ func emptyText(id string) string {
 		return "No releases"
 	default:
 		return "None"
+	}
+}
+
+func watchKind(id string) string {
+	switch id {
+	case "pods", "workloads":
+		return "Pod"
+	case "nodes":
+		return "Node"
+	case "events":
+		return "Event"
+	default:
+		return ""
+	}
+}
+
+func placeholderColumns(id string) []string {
+	switch id {
+	case "helm":
+		return []string{"Namespace", "Name", "Chart", "Revision", "Status"}
+	case "argo-applications":
+		return []string{"Namespace", "Name", "Sync", "Health"}
+	case "pods":
+		return []string{"Namespace", "Name", "Phase", "Ready"}
+	case "nodes":
+		return []string{"Name", "Status", "Age"}
+	case "events":
+		return []string{"Namespace", "Name", "Reason", "Message"}
+	case "workloads":
+		return []string{"Phase", "Pods"}
+	case "port-forwards":
+		return []string{"Namespace", "Pod", "Local", "Remote"}
+	default:
+		return []string{"Namespace", "Name", "Age"}
 	}
 }
 
@@ -169,7 +211,7 @@ func (a *App) runConfirmed(c Confirm) error {
 	switch c.Action {
 	case "delete":
 		if c.Kind == "Application" {
-			return a.session.DeleteArgo(ctx, c.Namespace, c.Name, "foreground")
+			return a.session.DeleteArgo(ctx, c.Namespace, c.Name, c.Cascade)
 		}
 		return a.session.Delete(ctx, id)
 	case "restart":
@@ -177,7 +219,15 @@ func (a *App) runConfirmed(c Confirm) error {
 	case "scale":
 		return a.session.Scale(ctx, id, c.Replicas)
 	case "sync":
-		return a.session.SyncArgo(ctx, c.Namespace, c.Name, cluster.ArgoSyncOptions{})
+		return a.session.SyncArgo(ctx, c.Namespace, c.Name, cluster.ArgoSyncOptions{Revision: c.SyncRevision, Prune: c.Prune})
+	case "sync-drift":
+		return applySyncTargets(ctx, a, c)
+	case "refresh":
+		return a.session.RefreshArgo(ctx, c.Namespace, c.Name, "normal")
+	case "refresh-all":
+		return applyRefreshTargets(ctx, a, c)
+	case "hard-refresh":
+		return a.session.RefreshArgo(ctx, c.Namespace, c.Name, "hard")
 	case "rollback":
 		if c.Kind == "Release" {
 			return a.session.HelmRollback(ctx, c.Namespace, c.Name, int(c.Revision))
@@ -251,6 +301,7 @@ func (a *App) leaveOverlay() {
 		a.logCancel()
 		a.logCancel = nil
 	}
+	a.logLoading = false
 	if a.mode == "exec" {
 		a.closeExec()
 	}
@@ -271,10 +322,30 @@ func (a *App) loadList(id string) {
 	a.listNotice = ""
 	a.listRows = nil
 	a.listCols = nil
+	a.argoApps = nil
+	a.argoSets = nil
+	a.argoProjects = nil
+	a.argoRepos = nil
+	a.argoClusters = nil
+	a.argoNotice = ""
+	a.argoErr = ""
+	a.argoRepoErr = ""
+	a.argoClusterErr = ""
+	a.argoAppsReady = false
+	a.argoSetsReady = false
+	a.argoProjectsReady = false
+	a.argoReposReady = false
+	a.argoClustersReady = false
 	a.mu.Unlock()
 	a.invalidate()
+	if isArgoScreen(id) {
+		go a.loadArgo(gen, id)
+		return
+	}
 	go func() {
-		cols, rows, notice, err := a.fetchList(context.Background(), id)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		cols, rows, notice, err := a.fetchList(ctx, id)
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		if gen != a.listGen || id != a.selected {
@@ -337,17 +408,6 @@ func (a *App) fetchList(ctx context.Context, id string) ([]string, []listRow, st
 			return nil, nil, "", err
 		}
 		return helmRows(rels)
-	case id == "argo-applications":
-		apps, err := a.session.ListArgoApplications(ctx)
-		if apierrors.IsNotFound(err) {
-			return []string{"Namespace", "Name", "Sync", "Health"}, nil, "CRD is not installed", nil
-		}
-		if err != nil {
-			return nil, nil, "", err
-		}
-		return argoRows(apps)
-	case strings.HasPrefix(id, "argo-"):
-		return a.genericRows(ctx, argoKind(id), "CRD is not installed")
 	case strings.HasPrefix(id, "istio-"):
 		return a.istioRows(ctx, id)
 	case workloadKind(id).Kind != "":
@@ -433,18 +493,6 @@ func workloadKind(id string) namedKind {
 	}
 }
 
-func argoKind(id string) namedKind {
-	resource := strings.TrimPrefix(id, "argo-")
-	kind := "Application"
-	switch id {
-	case "argo-applicationsets":
-		kind = "ApplicationSet"
-	case "argo-appprojects":
-		kind = "AppProject"
-	}
-	return namedKind{kind, schema.GroupVersionResource{Group: "argoproj.io", Version: "v1alpha1", Resource: resource}}
-}
-
 func genericColumns() []string {
 	return []string{"Namespace", "Name", "Age"}
 }
@@ -486,21 +534,6 @@ func helmRows(rels []cluster.HelmRelease) ([]string, []listRow, string, error) {
 		}
 		return out[i].Namespace < out[j].Namespace
 	})
-	return cols, out, "", nil
-}
-
-func argoRows(apps []cluster.ArgoApplication) ([]string, []listRow, string, error) {
-	cols := []string{"Namespace", "Name", "Sync", "Health"}
-	gvr := schema.GroupVersionResource{Group: "argoproj.io", Version: "v1alpha1", Resource: "applications"}
-	out := make([]listRow, 0, len(apps))
-	for _, app := range apps {
-		out = append(out, listRow{
-			Cells:     []string{app.Namespace, app.Name, app.Sync, app.Health},
-			Namespace: app.Namespace,
-			Name:      app.Name,
-			Identity:  cluster.Identity{GVR: gvr, Kind: "Application", Namespace: app.Namespace, Name: app.Name},
-		})
-	}
 	return cols, out, "", nil
 }
 

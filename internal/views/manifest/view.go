@@ -3,6 +3,8 @@ package manifest
 import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
+
+	kit "github.com/dacsang97/nakube/internal/ui"
 )
 
 // Page is the YAML editor. Dry-run and apply stay with the shell.
@@ -16,6 +18,7 @@ type Page struct {
 	OnReveal  func()
 	OnCancel  func()
 	OnConfirm func()
+	Pending   bool
 }
 
 // Draw paints the editor or the dry-run diff.
@@ -36,7 +39,14 @@ func Draw(c *ui.Context, t *ui.Theme, page Page) {
 		ui.Text(c, page.Err).TextColor(t.Danger)
 	}
 	if page.State == nil {
-		ui.Text(c, "Loading").TextColor(t.TextMuted)
+		if page.Err == "" {
+			editorSkeleton(c, t)
+		}
+		return
+	}
+	if page.Pending && page.Diff == nil {
+		editor.View(c, page.State).Height(160)
+		editorSkeleton(c, t)
 		return
 	}
 	if page.Diff != nil {
@@ -52,4 +62,13 @@ func Draw(c *ui.Context, t *ui.Theme, page Page) {
 		return
 	}
 	editor.View(c, page.State).Fill()
+}
+
+func editorSkeleton(c *ui.Context, t *ui.Theme) {
+	widths := []float32{280, 160, 320, 220, 120, 260, 180, 300}
+	kit.Status(c, "Loading").Children(func() {
+		for _, width := range widths {
+			kit.Bar(c, t, width, 10)
+		}
+	})
 }
