@@ -58,7 +58,9 @@ Stdio only. The process reads the context file the desktop `Use` writes, or kube
 |---|---|
 | `cmd/nakube` | Desktop window and the `mcp` subcommand |
 | `internal/cluster` | Kube client: watch, logs, exec, dry-run apply |
-| `internal/desktop` | Native overview and sidebar |
+| `internal/ui` | Reusable widgets. No Kubernetes types |
+| `internal/views` | One package per screen. Screens do not import each other |
+| `internal/desktop` | Window shell: sidebar, router, session state |
 | `internal/mcp` | Stdio MCP handler |
 | `internal/remote` | Tailscale listener for the phone, port `47623` |
 

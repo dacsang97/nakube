@@ -5,6 +5,7 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/dacsang97/nakube/internal/cluster"
 	"github.com/dacsang97/nakube/internal/remote"
+	"github.com/dacsang97/nakube/internal/views/overview"
 )
 
 // Phone adapts the desktop session for the Tailscale listener.
@@ -22,7 +24,7 @@ type Phone struct {
 func (p Phone) Overview(context.Context) (remote.Overview, error) {
 	a := p.App
 	a.mu.Lock()
-	shown := overviewFrom(a.nodes, a.pods, a.events, a.usage, a.usageErr)
+	shown := overview.From(a.nodes, a.pods, a.events, a.usage, a.usageErr, time.Now())
 	current := a.session.Current()
 	a.mu.Unlock()
 	return remote.Overview{

@@ -1,8 +1,10 @@
 package desktop
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -12,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/views/overview"
 )
 
 func TestSidebarOmitsDiagramAndFlux(t *testing.T) {
@@ -38,11 +41,13 @@ func TestSidebarOmitsDiagramAndFlux(t *testing.T) {
 
 func TestMetricsCardNotFound(t *testing.T) {
 	err := apierrors.NewNotFound(schema.GroupResource{Group: "metrics.k8s.io", Resource: "nodes"}, "nodes")
-	if got := metricsCardText(err, false, ""); got != "metrics unavailable" {
-		t.Fatalf("card text = %q", got)
+	missing := overview.From(nil, nil, nil, cluster.Usage{}, err, time.Now())
+	if missing.CPU != "metrics unavailable" || missing.Memory != "metrics unavailable" {
+		t.Fatalf("card text %+v", missing)
 	}
-	if got := metricsCardText(nil, true, "12m"); got != "12m" {
-		t.Fatalf("available card = %q", got)
+	got := overview.From(nil, nil, nil, cluster.Usage{Available: true, CPUMilli: 12}, nil, time.Now())
+	if got.CPU != "12m" {
+		t.Fatalf("available card = %q", got.CPU)
 	}
 }
 
@@ -50,12 +55,37 @@ func TestNoteUsageNotFoundDoesNotInventNumber(t *testing.T) {
 	a := New(cluster.NewSession())
 	err := apierrors.NewNotFound(schema.GroupResource{Group: "metrics.k8s.io", Resource: "nodes"}, "nodes")
 	a.noteUsage(cluster.Usage{}, err)
-	o := overviewFrom(nil, nil, nil, a.usage, a.usageErr)
+	o := overview.From(nil, nil, nil, a.usage, a.usageErr, time.Now())
 	if o.CPU != "metrics unavailable" || o.Memory != "metrics unavailable" {
 		t.Fatalf("cpu=%q memory=%q", o.CPU, o.Memory)
 	}
 	if strings.Contains(o.CPU, "0m") || strings.Contains(o.Memory, "0") {
 		t.Fatalf("invented a number: %+v", o)
+	}
+	if len(a.samples) != 0 {
+		t.Fatal("a missing API still recorded a sample")
+	}
+}
+
+func TestStartWatchReleasesTheLock(t *testing.T) {
+	a := New(cluster.NewSession())
+	done := make(chan struct{})
+	go func() {
+		a.startWatch(context.Background())
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("startWatch blocked while holding the app lock")
+	}
+	if !a.mu.TryLock() {
+		t.Fatal("app lock still held after startWatch")
+	}
+	released := a.watchCancel != nil || a.errText != ""
+	a.mu.Unlock()
+	if !released {
+		t.Fatal("startWatch neither opened a watch nor recorded an error")
 	}
 }
 

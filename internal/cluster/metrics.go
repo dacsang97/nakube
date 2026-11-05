@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -9,12 +10,21 @@ import (
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
+// NodeUsage is one node's metrics-server sample. A node the API omitted is
+// absent, not a zero filled in for it.
+type NodeUsage struct {
+	Name        string
+	CPUMilli    int64
+	MemoryBytes int64
+}
+
 // Usage is cluster CPU and memory from metrics-server. Available is false
 // when the API is missing. Callers must not invent a number in that case.
 type Usage struct {
 	Available   bool
 	CPUMilli    int64
 	MemoryBytes int64
+	Nodes       []NodeUsage
 }
 
 // Usage reports node metrics. A missing metrics API returns Available false
@@ -36,11 +46,17 @@ func (s *Session) Usage(ctx context.Context) (Usage, error) {
 		return Usage{}, err
 	}
 	var cpu, mem int64
+	nodes := make([]NodeUsage, 0, len(list.Items))
 	for i := range list.Items {
-		cpu += list.Items[i].Usage.Cpu().MilliValue()
-		mem += list.Items[i].Usage.Memory().Value()
+		item := &list.Items[i]
+		nCPU := item.Usage.Cpu().MilliValue()
+		nMem := item.Usage.Memory().Value()
+		cpu += nCPU
+		mem += nMem
+		nodes = append(nodes, NodeUsage{Name: item.Name, CPUMilli: nCPU, MemoryBytes: nMem})
 	}
-	return Usage{Available: true, CPUMilli: cpu, MemoryBytes: mem}, nil
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
+	return Usage{Available: true, CPUMilli: cpu, MemoryBytes: mem, Nodes: nodes}, nil
 }
 
 // MetricsAPIMissing reports that metrics-server is not installed or not ready.

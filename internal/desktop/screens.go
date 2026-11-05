@@ -10,46 +10,26 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 
 	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/views/helm"
+	"github.com/dacsang97/nakube/internal/views/logs"
+	"github.com/dacsang97/nakube/internal/views/manifest"
+	"github.com/dacsang97/nakube/internal/views/term"
 )
 
 func (a *App) drawLogs(c *ui.Context, t *ui.Theme) {
-	ui.Row(c).Gap(8).Children(func() {
-		if ui.Button(c, "Back").Clicked() {
-			a.leaveOverlay()
-		}
-		ui.Text(c, "Logs").FontSize(22).Bold()
-		if a.logPod != "" {
-			ui.Text(c, a.logPod).TextColor(t.TextMuted)
-		}
-		ui.TextInput(c, &a.logFilter).Placeholder("regex").Width(180)
-		label := "Follow on"
-		if !a.logFollow {
-			label = "Follow off"
-		}
-		if ui.Button(c, label).Clicked() {
-			a.logFollow = !a.logFollow
-		}
-	})
 	shown, err := FilterLines(a.logLines, a.logFilter)
-	if err != nil {
-		ui.Text(c, "Invalid regex").TextColor(t.Danger)
-		return
+	lines := make([]logs.Line, len(shown))
+	for i, line := range shown {
+		lines[i] = logs.Line{Pod: line.Pod, Text: line.Text, Color: PodColor(line.Pod)}
 	}
-	if len(shown) == 0 {
-		ui.Text(c, "No log lines").TextColor(t.TextMuted)
-		return
-	}
-	ui.Table(c, &ui.ListState{FollowEnd: a.logFollow}, []ui.TableColumn{
-		{Title: "Pod", Width: 140},
-		{Title: "Line"},
-	}, len(shown), func(row, col int) {
-		line := shown[row]
-		text := line.Pod
-		if col == 1 {
-			text = line.Text
-		}
-		ui.Text(c, text).TextColor(PodColor(line.Pod))
-	}).Fill()
+	logs.Draw(c, t, logs.Page{
+		Pod:     a.logPod,
+		Filter:  &a.logFilter,
+		Follow:  &a.logFollow,
+		Invalid: err != nil,
+		Lines:   lines,
+		OnBack:  a.leaveOverlay,
+	})
 }
 
 func (a *App) openLogs(namespace, name, container string) {
@@ -78,21 +58,7 @@ func (a *App) openLogs(namespace, name, container string) {
 }
 
 func (a *App) drawExec(c *ui.Context, t *ui.Theme) {
-	ui.Row(c).Gap(8).Children(func() {
-		if ui.Button(c, "Back").Clicked() {
-			a.closeExec()
-		}
-		ui.Text(c, "Exec").FontSize(22).Bold()
-	})
-	if a.execErr != "" {
-		ui.Text(c, a.execErr).TextColor(t.Danger)
-		return
-	}
-	if a.execTerm == nil {
-		ui.Text(c, "Connecting").TextColor(t.TextMuted)
-		return
-	}
-	terminal.View(c, a.execTerm).Fill()
+	term.Draw(c, t, term.Page{Err: a.execErr, Term: a.execTerm, OnBack: a.closeExec})
 }
 
 func (a *App) openExec(namespace, name, container string) {
@@ -146,45 +112,34 @@ func (a *App) closeExec() {
 }
 
 func (a *App) drawYAML(c *ui.Context, t *ui.Theme) {
-	ui.Row(c).Gap(8).Children(func() {
-		if ui.Button(c, "Back").Clicked() {
-			a.mode = ""
-			a.yaml = nil
-		}
-		ui.Text(c, "YAML").FontSize(22).Bold()
-		if ui.Button(c, "Dry-run").Clicked() && a.yaml != nil {
-			a.dryRunYAML()
-		}
-		if a.yaml != nil && a.yaml.Identity.Kind == "Secret" && ui.Button(c, "Reveal").Clicked() {
+	page := manifest.Page{OnBack: func() {
+		a.mode = ""
+		a.yaml = nil
+	}, OnDryRun: a.dryRunYAML}
+	if a.yaml != nil {
+		page.Err = a.yaml.Err
+		page.Kind = a.yaml.Identity.Kind
+		page.State = a.yaml.State
+		page.Diff = a.yaml.Diff
+		page.OnReveal = func() {
 			a.secretReveal = !a.secretReveal
 			a.openYAML(a.yaml.Identity)
 		}
-	})
-	if a.yaml != nil && a.yaml.Err != "" {
-		ui.Text(c, a.yaml.Err).TextColor(t.Danger)
-	}
-	if a.yaml == nil || a.yaml.State == nil {
-		ui.Text(c, "Loading").TextColor(t.TextMuted)
-		return
-	}
-	if a.yaml.Diff != nil {
-		editor.DiffView(c, a.yaml.Diff).Fill()
-		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, "Cancel").Clicked() {
-				_ = ConfirmYAML(a.yaml.Confirm, false, a.applyYAML)
-				a.yaml.Diff = nil
+		page.OnCancel = func() {
+			_ = ConfirmYAML(a.yaml.Confirm, false, a.applyYAML)
+			a.yaml.Diff = nil
+		}
+		page.OnConfirm = func() {
+			if a.yaml.State == nil || a.yaml.State.Buffer == nil {
+				return
 			}
-			if ui.Button(c, "Confirm").Clicked() {
-				body := a.yaml.State.Buffer.String()
-				dialog := a.yaml.Confirm
-				dialog.Body = body
-				_ = ConfirmYAML(dialog, true, a.applyYAML)
-				a.mode = ""
-			}
-		})
-		return
+			dialog := a.yaml.Confirm
+			dialog.Body = a.yaml.State.Buffer.String()
+			_ = ConfirmYAML(dialog, true, a.applyYAML)
+			a.mode = ""
+		}
 	}
-	editor.View(c, a.yaml.State).Fill()
+	manifest.Draw(c, t, page)
 }
 
 func (a *App) openYAML(id cluster.Identity) {
@@ -246,38 +201,32 @@ func (a *App) dryRunYAML() {
 }
 
 func (a *App) drawHelm(c *ui.Context, t *ui.Theme) {
-	ui.Text(c, "Install").FontSize(16).Bold()
-	ui.Row(c).Gap(8).Children(func() {
-		ui.TextInput(c, &a.helmRelease).Placeholder("release").Label("Release").Width(140)
-		ui.TextInput(c, &a.helmChart).Placeholder("chart").Label("Chart").Width(180)
-		ui.TextInput(c, &a.helmNamespace).Placeholder("namespace").Label("Namespace").Width(120)
-	})
 	if a.helmValues == nil {
 		buf := editor.NewBuffer("")
 		buf.SetLanguage(editor.LanguageFor("values.yaml"))
 		a.helmValues = &editor.State{Buffer: buf}
 	}
-	editor.View(c, a.helmValues).Height(120)
-	ui.Row(c).Gap(8).Children(func() {
-		if ui.Button(c, "Dry-run").Clicked() {
+	helm.Draw(c, t, helm.Form{
+		Release:   &a.helmRelease,
+		Chart:     &a.helmChart,
+		Namespace: &a.helmNamespace,
+		Values:    a.helmValues,
+		Diff:      a.helmDiff,
+		Err:       a.helmErr,
+		Dry:       a.helmDry,
+		OnDryRun: func() {
 			a.helmDry = true
 			a.runHelm(true)
-		}
-		if ui.Button(c, "Cancel").Clicked() {
+		},
+		OnCancel: func() {
 			a.helmDry = false
 			a.helmDiff = nil
-		}
-		if ui.Button(c, "Install").Clicked() && a.helmDry {
+		},
+		OnInstall: func() {
 			a.runHelm(false)
 			a.helmDry = false
-		}
+		},
 	})
-	if a.helmDiff != nil {
-		editor.DiffView(c, a.helmDiff).Height(160)
-	}
-	if a.helmErr != "" {
-		ui.Text(c, a.helmErr).TextColor(t.Danger)
-	}
 }
 
 func (a *App) runHelm(dry bool) {
