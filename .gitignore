@@ -12,3 +12,4 @@ DerivedData/
 *.provisionprofile
 
 .DS_Store
+/dist/

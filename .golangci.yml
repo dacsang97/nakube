@@ -1,0 +1,100 @@
+version: "2"
+
+run:
+  timeout: 5m
+  issues-exit-code: 2
+  tests: true
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+  concurrency: 4
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - bodyclose
+    - unconvert
+    - misspell
+    - whitespace
+    - revive
+    - gosec
+    - gocyclo
+    - nolintlint
+  disable:
+    - goconst
+    - funlen
+    - gocritic
+    - unparam
+
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+      exclude-functions:
+        - (io.Closer).Close
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Sprint
+        - io.Copy
+        - encoding/json.Marshal
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+
+    gocyclo:
+      min-complexity: 130
+
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+
+    gosec:
+      excludes:
+        - G101
+        - G104
+        - G117
+        - G204
+        - G301
+        - G302
+        - G306
+        - G404
+        - G601
+        - G705
+        # Bounded conversions: replica count into int32, palette length into uint32.
+        - G109
+        - G115
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+      - common-false-positives
+    rules:
+      - path: _test\.go
+        linters:
+          - funlen
+          - gocyclo
+          - errcheck
+          - gosec
+          - goconst
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      module-path: github.com/dacsang97/nakube
+      extra:
+        group-params: true
+        clothe-returns: true
+        balance-calls: true
+    goimports:
+      local-prefixes:
+        - github.com/dacsang97/nakube

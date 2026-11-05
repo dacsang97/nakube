@@ -1,11 +1,12 @@
 {
-  "name": "nakube",
+  "name": "NaKube",
+  "slug": "nakube",
   "identifier": "io.gnas.nakube",
   "version": "0.1.0",
   "main": "./cmd/nakube",
   "out": "build",
   "linux": {
-    "maintainer": "Nakube",
+    "maintainer": "NaKube",
     "webview": false
   }
 }

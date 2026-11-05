@@ -35,7 +35,7 @@ if keychain:
     cfg["macos"]["notarize"]["keychain"] = keychain
 cfg.setdefault("linux", {})
 cfg["linux"]["webview"] = False
-cfg["linux"].setdefault("maintainer", "Nakube")
+cfg["linux"].setdefault("maintainer", "NaKube")
 cfg.pop("windows", None)
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2)

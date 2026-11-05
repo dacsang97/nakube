@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -53,7 +54,10 @@ func (s *Session) Watch(ctx context.Context, h WatchHandler) error {
 	s.mu.Unlock()
 
 	factory := informers.NewSharedInformerFactoryWithOptions(cs, 0, informers.WithTransform(stripManagedFields))
-	s.bindInformers(factory, gen, h)
+	if err := s.bindInformers(factory, gen, h); err != nil {
+		s.StopWatch()
+		return err
+	}
 	factory.Start(wctx.Done())
 
 	s.mu.Lock()
@@ -71,27 +75,42 @@ func (s *Session) StopWatch() {
 	s.stopWatchLocked()
 }
 
-func (s *Session) bindInformers(factory informers.SharedInformerFactory, gen uint64, h WatchHandler) {
+func (s *Session) bindInformers(factory informers.SharedInformerFactory, gen uint64, h WatchHandler) error {
 	core := factory.Core().V1()
 	apps := factory.Apps().V1()
 	batch := factory.Batch().V1()
-	bind(core.Pods().Informer(), "Pod", gen, s, h)
-	bind(core.Nodes().Informer(), "Node", gen, s, h)
-	bind(core.Events().Informer(), "Event", gen, s, h)
-	bind(apps.Deployments().Informer(), "Deployment", gen, s, h)
-	bind(apps.ReplicaSets().Informer(), "ReplicaSet", gen, s, h)
-	bind(apps.DaemonSets().Informer(), "DaemonSet", gen, s, h)
-	bind(apps.StatefulSets().Informer(), "StatefulSet", gen, s, h)
-	bind(batch.Jobs().Informer(), "Job", gen, s, h)
-	bind(batch.CronJobs().Informer(), "CronJob", gen, s, h)
+	handlers := []struct {
+		inf  cache.SharedIndexInformer
+		kind string
+	}{
+		{core.Pods().Informer(), "Pod"},
+		{core.Nodes().Informer(), "Node"},
+		{core.Events().Informer(), "Event"},
+		{apps.Deployments().Informer(), "Deployment"},
+		{apps.ReplicaSets().Informer(), "ReplicaSet"},
+		{apps.DaemonSets().Informer(), "DaemonSet"},
+		{apps.StatefulSets().Informer(), "StatefulSet"},
+		{batch.Jobs().Informer(), "Job"},
+		{batch.CronJobs().Informer(), "CronJob"},
+	}
+	for _, item := range handlers {
+		if err := bind(item.inf, item.kind, gen, s, h); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func bind(inf cache.SharedIndexInformer, kind string, gen uint64, s *Session, h WatchHandler) {
-	inf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+func bind(inf cache.SharedIndexInformer, kind string, gen uint64, s *Session, h WatchHandler) error {
+	_, err := inf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj any) { s.emit(gen, h, "add", kind, obj) },
 		UpdateFunc: func(_, obj any) { s.emit(gen, h, "update", kind, obj) },
 		DeleteFunc: func(obj any) { s.emit(gen, h, "delete", kind, obj) },
 	})
+	if err != nil {
+		return fmt.Errorf("watch %s: %w", kind, err)
+	}
+	return nil
 }
 
 func (s *Session) emit(gen uint64, h WatchHandler, typ, kind string, obj any) {

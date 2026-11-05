@@ -33,7 +33,7 @@ type listSnap struct {
 	notice  string
 }
 
-func (a *App) drawMain(c *ui.Context, t *ui.Theme, selected string, snap listSnap) {
+func (a *App) drawMain(c *ui.Context, t *ui.Theme, id string, snap listSnap) {
 	if a.mode == "logs" {
 		a.drawLogs(c, t)
 		return
@@ -46,12 +46,12 @@ func (a *App) drawMain(c *ui.Context, t *ui.Theme, selected string, snap listSna
 		a.drawYAML(c, t)
 		return
 	}
-	if selected == "overview" || selected == "" {
+	if id == "overview" || id == "" {
 		a.cards(c, t)
 		return
 	}
-	a.drawList(c, t, selected, snap)
-	if selected == "helm" {
+	a.drawList(c, t, id, snap)
+	if id == "helm" {
 		a.drawHelm(c, t)
 	}
 }
@@ -373,7 +373,7 @@ func (a *App) loadList(id string) {
 
 func isLive(id string) bool {
 	switch id {
-	case "", "overview", "workloads", "pods", "nodes", "events", "port-forwards":
+	case "", "overview", "workloads", "pods", "nodes", "events", "port-forwards", "settings", "catalog":
 		return true
 	default:
 		return false
