@@ -14,8 +14,9 @@ type Bar struct {
 	OK    bool
 }
 
-// Bars draws usage over a window. No numeric axis: the shape is the point,
-// and the tooltip carries the value. Empty input draws nothing.
+// Bars draws one slot per sample across the window. Slots stay equal and
+// inset, so a sample near the end cannot slide its bar past the plot.
+// OK false is a gap in that slot, not a zero bar. Empty input draws nothing.
 func Bars(c *ui.Context, t *ui.Theme, start, end time.Time, bars []Bar, max float64, color ui.Color, format func(float64) string) {
 	if !end.After(start) || len(bars) == 0 {
 		return
@@ -24,36 +25,29 @@ func Bars(c *ui.Context, t *ui.Theme, start, end time.Time, bars []Bar, max floa
 		max = 1
 	}
 	y := chart.NewLinear(0, max)
-	x := chart.NewLinear(float64(start.Unix()), float64(end.Unix()))
+	slots := make([]string, len(bars))
+	x := chart.NewBand(slots...).Padding(0.32, 0.55)
 	span := end.Sub(start)
-	ticks := []chart.Tick{
-		{At: 0, Label: clock(start, span)},
-		{At: 1, Label: "now"},
-	}
 	well := Tint(t, color)
-	step := span / time.Duration(len(bars))
-	if step <= 0 {
-		step = time.Second
-	}
-	half := float64(step) / float64(time.Second) * 0.36
 	chart.Plot(c, chart.Axes{
-		Bottom: ticks,
+		Bottom: []chart.Tick{
+			{At: 0, Label: clock(start, span)},
+			{At: 1, Label: "now"},
+		},
 		Label: func(_ chart.Side, tick chart.Tick) {
 			ui.Text(c, tick.Label).NoWrap().TextColor(t.TextMuted).FontSize(11)
 		},
 	}, func(area ui.Element) {
 		area.Background(well).Radius(12)
-		for _, bar := range bars {
-			if !bar.OK {
+		for i, bar := range bars {
+			if !bar.OK || bar.Value <= 0 {
 				continue
 			}
-			at := float64(bar.At.Unix())
-			spanX := chart.Span{Lo: x.At(at - half), Hi: x.At(at + half)}
-			tip := clock(bar.At, end.Sub(start))
+			tip := clock(bar.At, span)
 			if format != nil {
 				tip += "  " + format(bar.Value)
 			}
-			chart.Rect(c, spanX, y.Span(0, bar.Value)).Background(color).Radius(3).Tooltip(tip)
+			chart.Rect(c, x.Band(i), y.Span(0, bar.Value)).Background(color).Radius(3).Tooltip(tip)
 		}
 	}).Height(148).Gap(4)
 }

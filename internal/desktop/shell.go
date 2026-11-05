@@ -119,7 +119,7 @@ func (a *App) drawSide(c *ui.Context, t *ui.Theme) {
 	}
 	ui.Column(c).Width(a.sideWidth()).Shrink(0).FillHeight().Background(t.Surface).Children(func() {
 		ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 12).AlignItems(ui.Center).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-			ui.Text(c, "MENU").FontSize(11).FontWeight(600).TextColor(t.TextMuted).SingleLine()
+			ui.Text(c, "NaKube").FontSize(13).FontWeight(650).SingleLine()
 		})
 		ui.Column(c).Shrink(0).Padding(8, 8, 4, 8).Children(func() {
 			ui.TextInput(c, &a.menuQuery).Placeholder("Search").Grow(1)

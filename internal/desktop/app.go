@@ -338,7 +338,6 @@ func (a *App) view(c *ui.Context) {
 	a.mu.Lock()
 	snap := overview.From(a.nodes, a.pods, a.events, a.usage, a.usageErr, time.Now())
 	samples := append([]overview.Sample(nil), a.samples...)
-	contexts := append([]string(nil), a.contexts...)
 	current := a.current
 	errText := a.errText
 	prev := a.selected
@@ -349,14 +348,12 @@ func (a *App) view(c *ui.Context) {
 	}
 
 	t := c.Theme()
-	chosen := current
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(shellBackdrop(t)).Padding(shellGap).Gap(shellGap).Children(func() {
 		ui.Row(c).Shrink(0).FillHeight().Radius(shellRadius).Clip().Background(t.Surface).Border(1, t.Border).Children(func() {
 			a.drawActivityBar(c, t, current)
 			a.drawSide(c, t)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Padding(12, 16).Gap(12).Children(func() {
-			chosen = a.header(c, t, contexts, current)
 			if errText != "" {
 				ui.Text(c, errText).TextColor(t.Danger)
 			}
@@ -366,9 +363,6 @@ func (a *App) view(c *ui.Context) {
 		})
 	})
 
-	if chosen != current {
-		a.switchContext(chosen)
-	}
 	id := screenID(a.router.Path())
 	if id == prev {
 		return
@@ -454,19 +448,6 @@ func screenID(path string) string {
 		return "overview"
 	}
 	return path
-}
-
-func (a *App) header(c *ui.Context, t *ui.Theme, contexts []string, current string) string {
-	chosen := current
-	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "NaKube").FontSize(22).Bold()
-		if len(contexts) == 0 {
-			ui.Text(c, "No contexts").TextColor(t.TextMuted)
-		} else {
-			ui.Select(c, &chosen, contexts).Width(220)
-		}
-	})
-	return chosen
 }
 
 func (a *App) confirmDialog(c *ui.Context, t *ui.Theme, confirm *Confirm) {

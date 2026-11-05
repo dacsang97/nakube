@@ -131,9 +131,6 @@ func TestEmptyContextView(t *testing.T) {
 	if !tt.HasText("NaKube") || !tt.HasText("Overview") || !tt.HasText("Workloads") || !tt.HasText("Pods") {
 		t.Fatalf("missing menu, texts %q", tt.Texts())
 	}
-	if !tt.HasText("MENU") {
-		t.Fatalf("missing menu title, texts %q", tt.Texts())
-	}
 	if !tt.HasText("metrics unavailable") {
 		t.Fatalf("missing metrics card, texts %q", tt.Texts())
 	}
