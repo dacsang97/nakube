@@ -131,3 +131,9 @@ func TestReadSelectedContextMissing(t *testing.T) {
 		t.Fatalf("name=%q ok=%v err=%v", name, ok, err)
 	}
 }
+
+func TestSyncedBeforeWatch(t *testing.T) {
+	if NewSession().Synced() {
+		t.Fatal("synced before a watch")
+	}
+}

@@ -6,7 +6,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Dots draws a Pulse-style history: a column of dots per bucket, filled
+// Dots draws a history: a column of dots per bucket, filled
 // from the bottom up to the value. A NaN bucket stays faint. Faint dots
 // are the well, not a measured zero.
 func Dots(c *ui.Context, t *ui.Theme, values []float64, max float64, color ui.Color) {

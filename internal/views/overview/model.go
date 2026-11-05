@@ -26,7 +26,7 @@ type Window struct {
 	Dur   time.Duration
 }
 
-// Windows are the Pulse ranges, plus a day for a cluster that has been open.
+// Windows are the time ranges, plus a day for a cluster that has been open.
 func Windows() []Window {
 	return []Window{
 		{"1m", time.Minute},

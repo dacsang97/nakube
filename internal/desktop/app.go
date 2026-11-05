@@ -2,6 +2,8 @@ package desktop
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -21,14 +23,25 @@ import (
 // Confirm is a dialog's captured identity. Later watch updates do not
 // retarget it.
 type Confirm struct {
-	Open      bool
-	Kind      string
+	Open         bool
+	Kind         string
+	Namespace    string
+	Name         string
+	Action       string
+	GVR          schema.GroupVersionResource
+	Replicas     int32
+	Revision     int64
+	SyncRevision string
+	Cascade      string
+	Prune        bool
+	Targets      []syncTarget
+}
+
+// syncTarget is one Application captured for a fleet sync or refresh.
+type syncTarget struct {
 	Namespace string
 	Name      string
-	Action    string
-	GVR       schema.GroupVersionResource
-	Replicas  int32
-	Revision  int64
+	Revision  string
 }
 
 // App is the native window state. It adapts one Session. It does not open
@@ -47,12 +60,15 @@ type App struct {
 	current    string
 	errText    string
 
-	pods     map[string]*corev1.Pod
-	nodes    map[string]*corev1.Node
-	events   map[string]*corev1.Event
-	usage    cluster.Usage
-	usageErr error
-	samples  []overview.Sample
+	pods         map[string]*corev1.Pod
+	nodes        map[string]*corev1.Node
+	events       map[string]*corev1.Event
+	usage        cluster.Usage
+	usageErr     error
+	samples      []overview.Sample
+	seen         map[string]bool
+	watchSettled bool
+	metricsSeen  bool
 
 	overviewRole   string
 	overviewMetric string
@@ -66,6 +82,8 @@ type App struct {
 	logFilter    string
 	logFollow    bool
 	logPod       string
+	logGen       int
+	logLoading   bool
 	logCancel    context.CancelFunc
 	execTerm     *terminal.Terminal
 	execConn     io.Closer
@@ -84,17 +102,36 @@ type App struct {
 	helmNamespace string
 	helmValues    *editor.State
 	helmDiff      *editor.DiffState
+	helmBusy      bool
 	helmDry       bool
 	helmErr       string
 
-	listGen     int
-	listID      string
-	listLoading bool
-	listErr     string
-	listNotice  string
-	listCols    []string
-	listRows    []listRow
+	syncRev     string
+	cascadeMode string
+	pruneSync   bool
 
+	argoApps          []cluster.ArgoApp
+	argoSets          []cluster.ArgoApplicationSet
+	argoProjects      []cluster.ArgoProject
+	argoRepos         []cluster.ArgoRepository
+	argoClusters      []cluster.ArgoCluster
+	argoNotice        string
+	argoErr           string
+	argoRepoErr       string
+	argoClusterErr    string
+	argoAppsReady     bool
+	argoSetsReady     bool
+	argoProjectsReady bool
+	argoReposReady    bool
+	argoClustersReady bool
+
+	listGen       int
+	listID        string
+	listLoading   bool
+	listErr       string
+	listNotice    string
+	listCols      []string
+	listRows      []listRow
 	catalogLoaded bool
 	catalogSynced time.Time
 	catalogPins   []string
@@ -217,10 +254,17 @@ func (a *App) startWatch(ctx context.Context) {
 	a.samples = nil
 	a.usage = cluster.Usage{}
 	a.usageErr = nil
+	a.seen = map[string]bool{}
+	a.watchSettled = false
+	a.metricsSeen = false
 	a.mu.Unlock()
+	a.invalidate()
 	if err := a.session.Watch(wctx, a.onWatch); err != nil {
 		a.setErr(publicError(err))
+		a.markListed()
+		return
 	}
+	go a.settleWatch(wctx)
 }
 
 func (a *App) refreshMetrics(ctx context.Context) {
@@ -228,7 +272,9 @@ func (a *App) refreshMetrics(ctx context.Context) {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for {
-			usage, err := a.session.Usage(ctx)
+			call, cancel := context.WithTimeout(ctx, 12*time.Second)
+			usage, err := a.session.Usage(call)
+			cancel()
 			a.noteUsage(usage, err)
 			a.invalidate()
 			select {
@@ -247,6 +293,7 @@ func (a *App) noteUsage(usage cluster.Usage, err error) {
 	defer a.mu.Unlock()
 	a.usage = usage
 	a.usageErr = err
+	a.metricsSeen = true
 	if err != nil || !usage.Available {
 		return
 	}
@@ -259,6 +306,10 @@ func (a *App) noteUsage(usage cluster.Usage, err error) {
 
 func (a *App) onWatch(ev cluster.WatchEvent) {
 	a.mu.Lock()
+	if a.seen == nil {
+		a.seen = map[string]bool{}
+	}
+	a.seen[ev.Kind] = true
 	a.fold(ev)
 	a.mu.Unlock()
 	a.invalidate()
@@ -336,6 +387,14 @@ func (a *App) View(c *ui.Context) { a.view(c) }
 
 func (a *App) view(c *ui.Context) {
 	a.mu.Lock()
+	wait := overview.Wait{}
+	if a.errText == "" {
+		wait.Nodes = !a.kindReady("Node")
+		wait.Pods = !a.kindReady("Pod")
+		wait.Events = !a.kindReady("Event")
+		wait.Facts = wait.Nodes && wait.Pods && wait.Events
+		wait.Metrics = !a.metricsSeen
+	}
 	snap := overview.From(a.nodes, a.pods, a.events, a.usage, a.usageErr, time.Now())
 	samples := append([]overview.Sample(nil), a.samples...)
 	current := a.current
@@ -358,7 +417,7 @@ func (a *App) view(c *ui.Context) {
 				ui.Text(c, errText).TextColor(t.Danger)
 			}
 			a.router.View(c, func(r *ui.Route) {
-				a.drawPage(c, t, r, current, confirm, snap, samples)
+				a.drawPage(c, t, r, current, confirm, snap, samples, wait)
 			})
 		})
 	})
@@ -375,7 +434,7 @@ func (a *App) view(c *ui.Context) {
 	a.loadList(id)
 }
 
-func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, confirm *Confirm, shown overview.Snapshot, samples []overview.Sample) {
+func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, confirm *Confirm, shown overview.Snapshot, samples []overview.Sample, wait overview.Wait) {
 	switch {
 	case r.Match("/catalog"):
 		r.Title("Catalog")
@@ -385,12 +444,17 @@ func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, 
 		a.drawSettings(c, t)
 	case r.Match("/overview"), r.Match("/"):
 		r.Title("Overview")
-		overview.Draw(c, t, shown, samples, current, &a.overviewRole, &a.overviewMetric, &a.overviewRange, time.Now(), a.openPage)
+		overview.Draw(c, t, shown, samples, current, &a.overviewRole, &a.overviewMetric, &a.overviewRange, time.Now(), a.openPage, &wait)
 	case r.Match("/{id}"):
 		id := r.Param("id")
 		r.Title(labelFor(id))
 		a.mu.Lock()
 		list := a.snapshotLocked(id)
+		if a.errText == "" {
+			if kind := watchKind(id); kind != "" && !a.kindReady(kind) && len(list.rows) == 0 {
+				list.loading = true
+			}
+		}
 		a.mu.Unlock()
 		a.drawMain(c, t, id, list)
 	default:
@@ -398,6 +462,50 @@ func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, 
 		ui.Text(c, "Not found")
 	}
 	a.confirmDialog(c, t, confirm)
+}
+
+func (a *App) kindReady(kind string) bool {
+	if a.watchSettled || a.seen[kind] || a.session.KindSynced(kind) {
+		return true
+	}
+	switch kind {
+	case "Pod":
+		return len(a.pods) > 0
+	case "Node":
+		return len(a.nodes) > 0
+	case "Event":
+		return len(a.events) > 0
+	default:
+		return false
+	}
+}
+
+func (a *App) settleWatch(ctx context.Context) {
+	deadline := time.NewTimer(12 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if a.session.KindSynced("Pod") && a.session.KindSynced("Node") && a.session.KindSynced("Event") {
+			a.markListed()
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-deadline.C:
+			a.markListed()
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+func (a *App) markListed() {
+	a.mu.Lock()
+	a.watchSettled = true
+	a.mu.Unlock()
+	a.invalidate()
 }
 
 func (a *App) openPage(id string) {
@@ -459,6 +567,9 @@ func (a *App) confirmDialog(c *ui.Context, t *ui.Theme, confirm *Confirm) {
 		ui.Column(c).Padding(16).Gap(8).Children(func() {
 			ui.Text(c, confirm.Action+" "+confirm.Kind).FontSize(18).Bold()
 			ui.Text(c, confirm.Namespace+"/"+confirm.Name)
+			if extra := confirmExtra(confirm); extra != "" {
+				ui.Text(c, extra).TextColor(t.TextMuted)
+			}
 			ui.Text(c, "This dialog keeps the object it opened on.").TextColor(t.TextMuted)
 			ui.Row(c).Gap(8).Children(func() {
 				if ui.Button(c, "Cancel").Clicked() {
@@ -477,6 +588,45 @@ func (a *App) confirmDialog(c *ui.Context, t *ui.Theme, confirm *Confirm) {
 			a.confirm.Open = false
 		}
 		a.mu.Unlock()
+	}
+}
+
+func confirmExtra(confirm *Confirm) string {
+	if confirm == nil {
+		return ""
+	}
+	switch confirm.Action {
+	case "delete":
+		if confirm.Kind != "Application" {
+			return ""
+		}
+		mode := confirm.Cascade
+		if mode == "" {
+			mode = "foreground"
+		}
+		return "Cascade: " + mode
+	case "sync":
+		rev := confirm.SyncRevision
+		if rev == "" {
+			rev = "HEAD"
+		}
+		line := "Revision: " + rev
+		if confirm.Prune {
+			line += " · prune"
+		}
+		return line
+	case "sync-drift":
+		line := fmt.Sprintf("%d applications", len(confirm.Targets))
+		if confirm.Prune {
+			line += " · prune"
+		}
+		return line
+	case "refresh-all":
+		return fmt.Sprintf("%d applications", len(confirm.Targets))
+	case "hard-refresh":
+		return "Hard refresh drops the manifest cache"
+	default:
+		return ""
 	}
 }
 
@@ -509,6 +659,9 @@ func objectKey(obj any) string {
 func publicError(err error) string {
 	if err == nil {
 		return ""
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timed out"
 	}
 	msg := err.Error()
 	lower := strings.ToLower(msg)

@@ -7,8 +7,8 @@ import (
 	"github.com/egoist/mygo/ui/chart"
 )
 
-// Bar is one real sample in a history. OK false is a gap, not a zero bar.
-type Bar struct {
+// Sample is one real sample in a history. OK false is a gap, not a zero bar.
+type Sample struct {
 	At    time.Time
 	Value float64
 	OK    bool
@@ -17,7 +17,7 @@ type Bar struct {
 // Bars draws one slot per sample across the window. Slots stay equal and
 // inset, so a sample near the end cannot slide its bar past the plot.
 // OK false is a gap in that slot, not a zero bar. Empty input draws nothing.
-func Bars(c *ui.Context, t *ui.Theme, start, end time.Time, bars []Bar, max float64, color ui.Color, format func(float64) string) {
+func Bars(c *ui.Context, t *ui.Theme, start, end time.Time, bars []Sample, max float64, color ui.Color, format func(float64) string) {
 	if !end.After(start) || len(bars) == 0 {
 		return
 	}

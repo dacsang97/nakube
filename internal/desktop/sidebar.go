@@ -78,9 +78,12 @@ func Sections() []Section {
 			{ID: "helm", Label: "Helm"},
 		}},
 		{Title: "Argo", Items: []Item{
+			{ID: "argo", Label: "Dashboard"},
 			{ID: "argo-applications", Label: "Applications"},
 			{ID: "argo-applicationsets", Label: "ApplicationSets"},
 			{ID: "argo-appprojects", Label: "AppProjects"},
+			{ID: "argo-repositories", Label: "Repositories"},
+			{ID: "argo-clusters", Label: "Clusters"},
 		}},
 		{Title: "Istio", Items: []Item{
 			{ID: "istio-virtualservices", Label: "VirtualServices"},

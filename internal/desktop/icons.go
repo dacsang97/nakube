@@ -99,9 +99,12 @@ var iconByID = map[string]string{
 
 	"helm": "package",
 
+	"argo":                 "gauge",
 	"argo-applications":    "git-branch",
 	"argo-applicationsets": "layers",
 	"argo-appprojects":     "folder-sync",
+	"argo-repositories":    "database",
+	"argo-clusters":        "globe",
 
 	"istio-virtualservices":        "route",
 	"istio-destinationrules":       "split",

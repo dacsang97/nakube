@@ -1,6 +1,10 @@
 package logs
 
-import "github.com/egoist/mygo/ui"
+import (
+	"github.com/egoist/mygo/ui"
+
+	kit "github.com/dacsang97/nakube/internal/ui"
+)
 
 // Line is one log row already filtered by the shell.
 type Line struct {
@@ -15,6 +19,7 @@ type Page struct {
 	Filter  *string
 	Follow  *bool
 	Invalid bool
+	Loading bool
 	Lines   []Line
 	OnBack  func()
 }
@@ -42,6 +47,10 @@ func Draw(c *ui.Context, t *ui.Theme, page Page) {
 		ui.Text(c, "Invalid regex").TextColor(t.Danger)
 		return
 	}
+	if page.Loading && len(page.Lines) == 0 {
+		logSkeleton(c, t)
+		return
+	}
 	if len(page.Lines) == 0 {
 		ui.Text(c, "No log lines").TextColor(t.TextMuted)
 		return
@@ -58,4 +67,19 @@ func Draw(c *ui.Context, t *ui.Theme, page Page) {
 		}
 		ui.Text(c, text).TextColor(line.Color)
 	}).Fill()
+}
+
+func logSkeleton(c *ui.Context, t *ui.Theme) {
+	kit.Status(c, "Loading").Children(func() {
+		ui.Row(c).Gap(16).Children(func() {
+			ui.Text(c, "Pod").FontSize(12).TextColor(t.TextMuted).Width(140)
+			ui.Text(c, "Line").FontSize(12).TextColor(t.TextMuted).Grow(1)
+		})
+		for range 6 {
+			ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
+				kit.Bar(c, t, 96, 12)
+				kit.Bar(c, t, 0, 12)
+			})
+		}
+	})
 }

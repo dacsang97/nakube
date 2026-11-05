@@ -53,6 +53,7 @@ type Session struct {
 	watchGen    uint64
 	watchCancel context.CancelFunc
 	factory     any
+	watchSync   []namedSync
 }
 
 // NewSession returns a session that has not opened a context yet.
@@ -355,4 +356,49 @@ func (s *Session) stopWatchLocked() {
 		s.watchCancel = nil
 	}
 	s.factory = nil
+	s.watchSync = nil
+}
+
+type namedSync struct {
+	kind string
+	inf  interface{ HasSynced() bool }
+}
+
+// Synced reports whether pods, nodes, and events have finished their first
+// list. Other informers may still be listing. It is false before Watch.
+func (s *Session) Synced() bool {
+	s.mu.Lock()
+	syncs := append([]namedSync(nil), s.watchSync...)
+	s.mu.Unlock()
+	need := map[string]bool{"Pod": false, "Node": false, "Event": false}
+	for _, item := range syncs {
+		if _, ok := need[item.kind]; !ok {
+			continue
+		}
+		if item.inf == nil || !item.inf.HasSynced() {
+			return false
+		}
+		need[item.kind] = true
+	}
+	for _, ok := range need {
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// KindSynced reports whether that informer's first list has finished.
+// An unknown kind, or a watch that has not started, is false.
+func (s *Session) KindSynced(kind string) bool {
+	s.mu.Lock()
+	syncs := append([]namedSync(nil), s.watchSync...)
+	s.mu.Unlock()
+	for _, item := range syncs {
+		if item.kind != kind {
+			continue
+		}
+		return item.inf != nil && item.inf.HasSynced()
+	}
+	return false
 }

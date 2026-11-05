@@ -161,28 +161,16 @@ func setArgoFinalizer(obj *unstructured.Unstructured, keep bool) error {
 	return nil
 }
 
-// ListArgoApplications reads Application status. A missing CRD is a NotFound error.
+// ListArgoApplications reads Application status for the phone.
+// A missing CRD is a NotFound error. The row has no operation field.
 func (s *Session) ListArgoApplications(ctx context.Context) ([]ArgoApplication, error) {
-	dyn, err := s.dynamicClient()
+	apps, err := s.ListArgoApps(ctx)
 	if err != nil {
 		return nil, err
 	}
-	list, err := dyn.Resource(argoGVR("applications")).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	out := make([]ArgoApplication, 0, len(list.Items))
-	for i := range list.Items {
-		item := &list.Items[i]
-		sync, _, _ := unstructured.NestedString(item.Object, "status", "sync", "status")
-		health, _, _ := unstructured.NestedString(item.Object, "status", "health", "status")
-		out = append(out, ArgoApplication{
-			Name:      item.GetName(),
-			Namespace: item.GetNamespace(),
-			Sync:      sync,
-			Health:    health,
-		})
+	out := make([]ArgoApplication, len(apps))
+	for i, app := range apps {
+		out[i] = ArgoApplication{Name: app.Name, Namespace: app.Namespace, Sync: app.Sync, Health: app.Health}
 	}
 	return out, nil
 }
