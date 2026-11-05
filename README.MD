@@ -1,4 +1,4 @@
-# Nakube
+# NaKube
 
 Native Kubernetes client for one kube context. The desktop window is MyGo UI, not a web page. `internal/cluster` is the only Kubernetes implementation. The window, `nakube mcp`, and the phone listener are adapters over that package.
 
@@ -20,6 +20,15 @@ go test ./...
 ```
 
 Package tests need no cluster and no display. A missing kubeconfig is not a failure.
+
+## Phone
+
+`ios/NakubeRemote` is a SwiftUI app. It stores a MagicDNS name and calls `http://<name>:47623` on the tailnet. `Info.plist` allows cleartext HTTP for `ts.net`. Restart and delete confirm on the phone. A bare pod cannot be restarted.
+
+## Release
+
+`scripts/release.sh` stops unless `MACOS_SIGNING_IDENTITY` and `NOTARY_KEYCHAIN_PROFILE` are set. It does not commit signing fields and does not store an Apple password. Windows stays unsigned. Linux keeps `webview` false.
+
 
 ## MCP
 

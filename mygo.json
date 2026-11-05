@@ -1,6 +1,6 @@
 {
   "name": "nakube",
-  "identifier": "dev.nakube.app",
+  "identifier": "io.gnas.nakube",
   "version": "0.1.0",
   "main": "./cmd/nakube",
   "out": "build",

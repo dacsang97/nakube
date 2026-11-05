@@ -20,20 +20,28 @@ func TestExecConnResizeRecordsColumns(t *testing.T) {
 		t.Fatalf("size = %d×%d", cols, rows)
 	}
 
+	stdin := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 2)
+		_, err := io.ReadFull(stdinR, buf)
+		if err != nil {
+			t.Errorf("stdin read: %v", err)
+		}
+		stdin <- buf
+	}()
 	if _, err := conn.Write([]byte("hi")); err != nil {
 		t.Fatal(err)
 	}
-	buf := make([]byte, 2)
-	if _, err := io.ReadFull(stdinR, buf); err != nil {
-		t.Fatal(err)
-	}
-	if string(buf) != "hi" {
-		t.Fatalf("stdin = %q", buf)
+	if got := string(<-stdin); got != "hi" {
+		t.Fatalf("stdin = %q", got)
 	}
 
-	if _, err := stdoutW.Write([]byte("ok")); err != nil {
-		t.Fatal(err)
-	}
+	go func() {
+		if _, err := stdoutW.Write([]byte("ok")); err != nil {
+			t.Errorf("stdout write: %v", err)
+		}
+	}()
+	buf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, buf); err != nil {
 		t.Fatal(err)
 	}

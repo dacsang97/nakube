@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -130,22 +130,31 @@ func TestRestartRejectsPod(t *testing.T) {
 }
 
 func TestScaleDeployment(t *testing.T) {
-	replicas := int32(1)
-	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "ns"},
-		Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
-	}
-	cs := k8sfake.NewClientset(dep)
+	cs := k8sfake.NewClientset()
+	var got int32
+	cs.PrependReactor("get", "deployments", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "scale" {
+			return false, nil, nil
+		}
+		return true, &autoscalingv1.Scale{
+			ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "ns"},
+			Spec:       autoscalingv1.ScaleSpec{Replicas: 1},
+		}, nil
+	})
+	cs.PrependReactor("update", "deployments", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "scale" {
+			return false, nil, nil
+		}
+		scale := action.(clienttesting.UpdateAction).GetObject().(*autoscalingv1.Scale)
+		got = scale.Spec.Replicas
+		return true, scale, nil
+	})
 	s := &Session{cs: cs}
 	if err := s.Scale(context.Background(), Identity{Kind: "Deployment", Namespace: "ns", Name: "web"}, 3); err != nil {
 		t.Fatal(err)
 	}
-	got, err := cs.AppsV1().Deployments("ns").GetScale(context.Background(), "web", metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Spec.Replicas != 3 {
-		t.Fatalf("replicas = %d", got.Spec.Replicas)
+	if got != 3 {
+		t.Fatalf("replicas = %d", got)
 	}
 }
 

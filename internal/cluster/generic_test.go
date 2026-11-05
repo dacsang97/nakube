@@ -66,7 +66,7 @@ func TestListGenericOmitsSecretData(t *testing.T) {
 		},
 		"data": map[string]any{"password": "c2VjcmV0"},
 	}}
-	dyn := fake.NewSimpleDynamicClient(runtime.NewScheme())
+	dyn := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "SecretList"})
 	dyn.PrependReactor("list", "secrets", func(clienttesting.Action) (bool, runtime.Object, error) {
 		return true, &unstructured.UnstructuredList{
 			Object: map[string]any{"apiVersion": "v1", "kind": "SecretList"},

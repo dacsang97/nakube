@@ -57,8 +57,7 @@ func TestToolsAndWriteRejection(t *testing.T) {
 	if err := s.Serve(context.Background(), strings.NewReader(in), &out); err != nil {
 		t.Fatal(err)
 	}
-	msgs, err := Frames(out.Bytes())
-	if err != nil {
+	if _, err := Frames(out.Bytes()); err != nil {
 		t.Fatal(err)
 	}
 	body := out.String()
@@ -70,13 +69,7 @@ func TestToolsAndWriteRejection(t *testing.T) {
 	if strings.Contains(body, `"name":"apply"`) {
 		t.Fatal("listed a write tool")
 	}
-	errors := 0
-	for _, msg := range msgs {
-		if bytes.Contains(raw(msg), []byte("unknown tool")) || bytes.Contains(raw(msg), []byte("exec command is required")) {
-			errors++
-		}
-	}
-	if errors < 3 {
+	if strings.Count(body, "unknown tool") < 2 || !strings.Contains(body, "exec command is required") {
 		t.Fatalf("write and empty exec were not all rejected: %s", body)
 	}
 }
@@ -122,7 +115,7 @@ func TestExecWritesInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	if api.exec == nil || api.exec.wrote.String() != "pwd\n" {
-		t.Fatalf("exec write = %q", api.exec)
+		t.Fatalf("exec write = %#v", api.exec)
 	}
 	msgs, err := Frames(out.Bytes())
 	if err != nil {

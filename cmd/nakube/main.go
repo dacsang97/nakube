@@ -31,6 +31,7 @@ func main() {
 		})
 		app.Attach(win)
 		go app.Bootstrap(context.Background())
+		go app.StartPhoneListener(context.Background())
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)

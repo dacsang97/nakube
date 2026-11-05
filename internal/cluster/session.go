@@ -194,6 +194,10 @@ func (s *Session) clientset() (kubernetes.Interface, error) {
 	return s.cs, nil
 }
 
+// Clientset is the open context's client. Adapters must not build another one.
+func (s *Session) Clientset() (kubernetes.Interface, error) {
+	return s.clientset()
+}
 func (s *Session) dynamicClient() (dynamic.Interface, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

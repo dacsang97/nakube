@@ -2,11 +2,14 @@ package desktop
 
 import (
 	"context"
+	"io"
 	"strings"
 	"sync"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/dacsang97/nakube/internal/cluster"
@@ -45,6 +48,29 @@ type App struct {
 
 	shown   Overview
 	confirm *Confirm
+
+	mode          string
+	row           int
+	logLines      []LogLine
+	logFilter     string
+	logFollow     bool
+	execTerm      *terminal.Terminal
+	execConn      io.Closer
+	execErr       string
+	yaml          *yamlScreen
+	genericRows   []Row
+	forwards      []*cluster.Forward
+	secretReveal  bool
+	helmRelease   string
+	helmChart     string
+	helmNamespace string
+	helmValues    *editor.State
+	helmDiff      *editor.DiffState
+	helmDry       bool
+	helmErr       string
+	argoApps      []cluster.ArgoApplication
+	istioRules    []cluster.IstioRule
+	crdMissing    bool
 
 	watchCancel context.CancelFunc
 }
@@ -180,7 +206,7 @@ func (a *App) fold(ev cluster.WatchEvent) {
 			return
 		}
 		if pod, ok := ev.Object.(*corev1.Pod); ok {
-			a.pods[key] = pod
+			a.pods[key] = pod.DeepCopy()
 		}
 	case "Node":
 		if ev.Type == "delete" {
@@ -188,7 +214,7 @@ func (a *App) fold(ev cluster.WatchEvent) {
 			return
 		}
 		if node, ok := ev.Object.(*corev1.Node); ok {
-			a.nodes[key] = node
+			a.nodes[key] = node.DeepCopy()
 		}
 	case "Event":
 		if ev.Type == "delete" {
@@ -196,7 +222,7 @@ func (a *App) fold(ev cluster.WatchEvent) {
 			return
 		}
 		if event, ok := ev.Object.(*corev1.Event); ok {
-			a.events[key] = event
+			a.events[key] = event.DeepCopy()
 		}
 	}
 }
@@ -271,8 +297,7 @@ func (a *App) view(c *ui.Context) {
 			if selected == "overview" || selected == "" {
 				a.cards(c, t)
 			} else {
-				ui.Text(c, labelFor(selected)).FontSize(22).Bold()
-				ui.Text(c, "No objects yet").TextColor(t.TextMuted)
+				a.drawSelected(c, t, selected, nil)
 			}
 			a.confirmDialog(c, t, confirm)
 		})

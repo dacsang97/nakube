@@ -5,6 +5,10 @@ mygo_windows_*.syso
 *.p12
 *.pfx
 *.mobileprovision
+
+ios/**/xcuserdata/
+*.xcuserstate
+DerivedData/
 *.provisionprofile
 
 .DS_Store
