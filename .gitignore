@@ -1,0 +1,10 @@
+/build/
+/.mygo/
+mygo_windows_*.syso
+
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+
+.DS_Store

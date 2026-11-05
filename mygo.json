@@ -1,0 +1,11 @@
+{
+  "name": "nakube",
+  "identifier": "dev.nakube.app",
+  "version": "0.1.0",
+  "main": "./cmd/nakube",
+  "out": "build",
+  "linux": {
+    "maintainer": "Nakube",
+    "webview": false
+  }
+}
