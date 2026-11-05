@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/dacsang97/nakube/internal/cluster"
@@ -424,6 +425,7 @@ func (a *App) runHelm(dry bool) {
 }
 
 func (a *App) drawArgo(c *ui.Context, t *ui.Theme, selected string) {
+	a.ensureArgo()
 	ui.Text(c, labelFor(selected)).FontSize(22).Bold()
 	if a.crdMissing {
 		ui.Text(c, "CRD is not installed").TextColor(t.TextMuted)
@@ -439,6 +441,7 @@ func (a *App) drawArgo(c *ui.Context, t *ui.Theme, selected string) {
 }
 
 func (a *App) drawIstio(c *ui.Context, t *ui.Theme, selected string) {
+	a.ensureIstio()
 	ui.Text(c, labelFor(selected)).FontSize(22).Bold()
 	if a.crdMissing {
 		ui.Text(c, "CRD is not installed").TextColor(t.TextMuted)
@@ -532,6 +535,34 @@ type yamlScreen struct {
 
 func (a *App) applyYAML(id cluster.Identity, body string) error {
 	return a.session.Apply(context.Background(), id, body)
+}
+
+func (a *App) ensureArgo() {
+	if a.argoLoaded {
+		return
+	}
+	a.argoLoaded = true
+	go func() {
+		apps, err := a.session.ListArgoApplications(context.Background())
+		a.mu.Lock()
+		a.argoApps = apps
+		a.crdMissing = apierrors.IsNotFound(err)
+		a.mu.Unlock()
+		a.invalidate()
+	}()
+}
+
+func (a *App) ensureIstio() {
+	if a.istioLoaded {
+		return
+	}
+	a.istioLoaded = true
+	go func() {
+		a.mu.Lock()
+		a.crdMissing = a.session.Current() == ""
+		a.mu.Unlock()
+		a.invalidate()
+	}()
 }
 
 // Keep io import used by exec close through the conn interface.

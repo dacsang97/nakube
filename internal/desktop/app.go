@@ -71,6 +71,8 @@ type App struct {
 	argoApps      []cluster.ArgoApplication
 	istioRules    []cluster.IstioRule
 	crdMissing    bool
+	argoLoaded    bool
+	istioLoaded   bool
 
 	watchCancel context.CancelFunc
 }
