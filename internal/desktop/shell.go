@@ -307,7 +307,6 @@ func (a *App) contextRow(c *ui.Context, t *ui.Theme, name string, active bool) {
 	})
 	if !active && row.Clicked() {
 		a.switchContext(name)
-		a.openPage("overview")
 	}
 }
 

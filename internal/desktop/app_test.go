@@ -573,13 +573,35 @@ users:
 	t.Fatal("switch did not complete")
 }
 
-func TestContextRowClickOpensOverview(t *testing.T) {
+func TestContextRowClickStaysOnPage(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	// Point client-go at a missing file so clicking a context cannot read a
-	// real kubeconfig or write the real per-user state file.
-	t.Setenv("KUBECONFIG", filepath.Join(dir, "missing", "config"))
-
+	kubeconfig := filepath.Join(dir, "kubeconfig")
+	fixture := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://127.0.0.1:6443
+  name: c
+contexts:
+- context:
+    cluster: c
+    user: u
+  name: dev
+- context:
+    cluster: c
+    user: u
+  name: prod
+current-context: dev
+users:
+- name: u
+  user:
+    token: test-token-not-for-logs
+`
+	if err := os.WriteFile(kubeconfig, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KUBECONFIG", kubeconfig) // wire fixture into loading rules (hermetic: file lives in t.TempDir)
 	s := cluster.NewSession()
 	s.SetStatePath(filepath.Join(dir, "state", "context"))
 	a := New(s)
@@ -587,11 +609,16 @@ func TestContextRowClickOpensOverview(t *testing.T) {
 	a.current = "dev"
 	a.router.Push("/pods")
 	tt := ui.NewTester(a.view, 1100, 720)
-	if err := tt.Click("prod"); err != nil {
-		t.Fatal(err)
+	tt.Click("prod")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && a.current != "prod" {
+		time.Sleep(10 * time.Millisecond)
 	}
-	if got := screenID(a.router.Path()); got != "overview" {
-		t.Fatalf("context row click landed on %q, want overview", got)
+	if a.current != "prod" {
+		t.Fatalf("context did not switch, current=%q", a.current)
+	}
+	if got := a.router.Path(); got != "/pods" {
+		t.Fatalf("router moved to %q, want /pods", got)
 	}
 }
 
