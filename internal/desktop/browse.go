@@ -307,39 +307,62 @@ func (a *App) leaveOverlay() {
 	}
 	a.mode = ""
 	a.yaml = nil
+	a.stash()
+}
+
+func (a *App) backFromOverlay() {
+	if a.tabs != nil && a.tabs.Detail(a.active) != nil {
+		a.closeTab(a.active)
+		return
+	}
+	a.leaveOverlay()
+}
+
+func (a *App) backFromExec() {
+	if a.tabs != nil && a.tabs.Detail(a.active) != nil {
+		a.closeTab(a.active)
+		return
+	}
+	a.closeExec()
+}
+
+func (a *App) backFromYAML() {
+	if a.tabs != nil && a.tabs.Detail(a.active) != nil {
+		a.closeTab(a.active)
+		return
+	}
+	a.mode = ""
+	a.yaml = nil
+	a.stash()
 }
 
 func (a *App) loadList(id string) {
 	if isLive(id) {
 		return
 	}
+	a.ensureTabs()
+	tabID := a.active
 	a.mu.Lock()
-	a.listGen++
-	gen := a.listGen
-	a.listID = id
-	a.listLoading = true
-	a.listErr = ""
-	a.listNotice = ""
-	a.listRows = nil
-	a.listCols = nil
-	a.argoApps = nil
-	a.argoSets = nil
-	a.argoProjects = nil
-	a.argoRepos = nil
-	a.argoClusters = nil
-	a.argoNotice = ""
-	a.argoErr = ""
-	a.argoRepoErr = ""
-	a.argoClusterErr = ""
-	a.argoAppsReady = false
-	a.argoSetsReady = false
-	a.argoProjectsReady = false
-	a.argoReposReady = false
-	a.argoClustersReady = false
+	b := a.bodies[tabID]
+	if b == nil {
+		b = newTabBody()
+		if a.bodies == nil {
+			a.bodies = map[string]*tabBody{}
+		}
+		a.bodies[tabID] = b
+	}
+	b.listGen++
+	gen := b.listGen
+	b.listID = id
+	b.loaded = false
+	b.clearList()
+	if a.active == tabID {
+		a.projectListLocked(b)
+	}
 	a.mu.Unlock()
 	a.invalidate()
 	if isArgoScreen(id) {
-		go a.loadArgo(gen, id)
+		go a.loadArgo(tabID, gen, id)
 		return
 	}
 	go func() {
@@ -348,15 +371,21 @@ func (a *App) loadList(id string) {
 		cols, rows, notice, err := a.fetchList(ctx, id)
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		if gen != a.listGen || id != a.selected {
+		b := a.bodies[tabID]
+		if b == nil || gen != b.listGen {
 			return
 		}
-		a.listLoading = false
-		a.listCols = cols
-		a.listRows = rows
-		a.listNotice = notice
+		b.listLoading = false
+		b.loaded = true
+		b.listCols = cols
+		b.listRows = rows
+		b.listNotice = notice
+		b.listErr = ""
 		if err != nil {
-			a.listErr = publicError(err)
+			b.listErr = publicError(err)
+		}
+		if a.active == tabID {
+			a.projectListLocked(b)
 		}
 		a.invalidate()
 	}()

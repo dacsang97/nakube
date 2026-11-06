@@ -115,4 +115,5 @@ var iconByID = map[string]string{
 	"istio-authorizationpolicies":  "shield-alert",
 	"istio-requestauthentications": "key-round",
 	"settings":                     "settings",
+	"catalog":                      "plus",
 }

@@ -182,8 +182,10 @@ func (a *App) sideRow(c *ui.Context, t *ui.Theme, item Item, selected bool) {
 			label.TextColor(t.Text)
 		}
 	})
-	if row.Clicked() {
-		a.openPage(item.ID)
+	if row.DoubleClicked() {
+		a.showScreen(item.ID, false)
+	} else if row.Clicked() {
+		a.showScreen(item.ID, true)
 	}
 }
 

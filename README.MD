@@ -1,9 +1,10 @@
 # NaKube
 
-Native Kubernetes client for one kube context. The desktop window is native UI, not a web page. `internal/cluster` is the only Kubernetes implementation. The window, `nakube mcp`, and the phone listener are adapters over that package.
+A native desktop app for one Kubernetes context.
 
-Module: `github.com/dacsang97/nakube`  
-Identifier: `io.gnas.nakube`
+The window is native, so it stays fast. The interface is quiet: clear type, calm color, and room to work.
+
+`github.com/dacsang97/nakube` · `io.gnas.nakube`
 
 ## Develop
 
@@ -13,17 +14,27 @@ Go 1.27.3 or newer.
 go tool mygo dev
 ```
 
-Quit the window, or press Ctrl+C, to stop. `go tool mygo dev` sets `TERM`, so the login-shell import is skipped. A Dock launch runs that import on a goroutine and does not wait for it before the first frame.
+Quit the window, or press Ctrl+C. `go tool mygo dev` sets `TERM`, so the login-shell import is skipped. A Dock launch runs that import in the background and does not wait for the first frame.
 
 ```sh
 go test ./...
 ```
 
-Package tests need no cluster and no display. A missing kubeconfig is not a failure.
+Tests need no cluster and no display. A missing kubeconfig is not a failure.
+
+## Editor
+
+One tab per screen. A click opens a preview and replaces the previous one. A double click pins it. A drag reorders the strip. Logs, a shell, and YAML open beside the list. Closing the last tab returns to Overview.
+
+| | macOS | Elsewhere |
+|---|---|---|
+| Close | Command-W | Ctrl-W |
+| Previous / next | Command-Option-Left / Right | Ctrl-PageDown / Ctrl-PageUp |
+| Jump | Command-1–8, Command-9 last | Ctrl-1–8, Ctrl-9 last |
 
 ## Checks
 
-CI runs these on pull requests and on `main`. None of them package or publish the app.
+CI runs these on pull requests and on `main`. They do not package the app.
 
 ```sh
 make fmt-check
@@ -34,12 +45,11 @@ make lint
 
 ## Phone
 
-`ios/NakubeRemote` is a SwiftUI app. It stores a MagicDNS name and calls `http://<name>:47623` on the tailnet. `Info.plist` allows cleartext HTTP for `ts.net`. Restart and delete confirm on the phone. A bare pod cannot be restarted.
+The phone app stores a MagicDNS name and calls `http://<name>:47623` on the tailnet. Cleartext HTTP is allowed for `ts.net`. Restart and delete confirm on the phone. A bare pod cannot be restarted.
 
 ## Release
 
-`scripts/release.sh` stops unless `MACOS_SIGNING_IDENTITY` and `NOTARY_KEYCHAIN_PROFILE` are set. It does not commit signing fields and does not store an Apple password. Windows stays unsigned. Linux keeps `webview` false.
-
+`scripts/release.sh` stops unless `MACOS_SIGNING_IDENTITY` and `NOTARY_KEYCHAIN_PROFILE` are set. It does not commit signing fields or store an Apple password. Windows stays unsigned. Linux keeps `webview` false, so the package does not pull WebKitGTK.
 
 ## MCP
 
@@ -47,18 +57,4 @@ make lint
 nakube mcp
 ```
 
-Stdio only. The process reads the context file the desktop `Use` writes, or kubeconfig `current-context` when that file is absent. It can list, get, stream logs, and exec. It cannot apply, delete, or scale.
-
-## Layout
-
-| Path | Role |
-|---|---|
-| `cmd/nakube` | Desktop window and the `mcp` subcommand |
-| `internal/cluster` | Kube client: watch, logs, exec, dry-run apply |
-| `internal/ui` | Reusable widgets. No Kubernetes types |
-| `internal/views` | One package per screen. Screens do not import each other |
-| `internal/desktop` | Window shell: sidebar, router, session state |
-| `internal/mcp` | Stdio MCP handler |
-| `internal/remote` | Tailscale listener for the phone, port `47623` |
-
-`linux.webview` is false. The packaged app does not pull WebKitGTK.
+Stdio only. It reads the context file written by desktop `Use`, or kubeconfig `current-context` when that file is absent. It can list, get, stream logs, and exec. It cannot apply, delete, or scale.

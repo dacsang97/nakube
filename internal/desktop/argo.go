@@ -156,7 +156,7 @@ func applyTargets(targets []syncTarget, fn func(syncTarget) error) error {
 	return fmt.Errorf("%s", b.String())
 }
 
-func (a *App) loadArgo(gen int, id string) {
+func (a *App) loadArgo(tabID string, gen int, id string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	var (
@@ -172,7 +172,7 @@ func (a *App) loadArgo(gen int, id string) {
 	)
 	switch id {
 	case "argo":
-		a.loadArgoDashboard(ctx, gen, id)
+		a.loadArgoDashboard(ctx, tabID, gen)
 		return
 	case "argo-applications":
 		apps, notice, err = a.fetchArgoApps(ctx)
@@ -187,91 +187,103 @@ func (a *App) loadArgo(gen int, id string) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if gen != a.listGen || id != a.selected {
+	b := a.bodies[tabID]
+	if b == nil || gen != b.listGen {
 		return
 	}
-	a.listLoading = false
-	a.argoApps = apps
-	a.argoSets = sets
-	a.argoProjects = projects
-	a.argoRepos = repos
-	a.argoClusters = clusters
-	a.argoNotice = notice
-	a.argoRepoErr = repoErr
-	a.argoClusterErr = clusterErr
-	a.argoErr = ""
+	b.listLoading = false
+	b.loaded = true
+	b.argoApps = apps
+	b.argoSets = sets
+	b.argoProjects = projects
+	b.argoRepos = repos
+	b.argoClusters = clusters
+	b.argoNotice = notice
+	b.argoRepoErr = repoErr
+	b.argoClusterErr = clusterErr
+	b.argoErr = ""
 	if err != nil {
-		a.argoErr = publicError(err)
+		b.argoErr = publicError(err)
+	}
+	if a.active == tabID {
+		a.projectListLocked(b)
 	}
 	a.invalidate()
 }
 
-func (a *App) loadArgoDashboard(ctx context.Context, gen int, id string) {
+func (a *App) loadArgoDashboard(ctx context.Context, tabID string, gen int) {
 	var wg sync.WaitGroup
 	wg.Add(5)
 	go func() {
 		defer wg.Done()
 		apps, notice, err := a.fetchArgoApps(ctx)
-		a.storeArgo(gen, id, func() {
-			a.argoApps = apps
-			a.argoAppsReady = true
-			a.argoNotice = notice
+		a.storeArgo(tabID, gen, func(b *tabBody) {
+			b.argoApps = apps
+			b.argoAppsReady = true
+			b.argoNotice = notice
 			if err != nil {
-				a.argoErr = publicError(err)
+				b.argoErr = publicError(err)
 			}
 		})
 	}()
 	go func() {
 		defer wg.Done()
 		sets, err := a.fetchArgoSets(ctx, false)
-		a.storeArgo(gen, id, func() {
-			a.argoSets = sets
-			a.argoSetsReady = true
-			if err != nil && a.argoErr == "" {
-				a.argoErr = publicError(err)
+		a.storeArgo(tabID, gen, func(b *tabBody) {
+			b.argoSets = sets
+			b.argoSetsReady = true
+			if err != nil && b.argoErr == "" {
+				b.argoErr = publicError(err)
 			}
 		})
 	}()
 	go func() {
 		defer wg.Done()
 		projects, err := a.fetchArgoProjects(ctx, false)
-		a.storeArgo(gen, id, func() {
-			a.argoProjects = projects
-			a.argoProjectsReady = true
-			if err != nil && a.argoErr == "" {
-				a.argoErr = publicError(err)
+		a.storeArgo(tabID, gen, func(b *tabBody) {
+			b.argoProjects = projects
+			b.argoProjectsReady = true
+			if err != nil && b.argoErr == "" {
+				b.argoErr = publicError(err)
 			}
 		})
 	}()
 	go func() {
 		defer wg.Done()
 		repos, repoErr := a.fetchArgoRepos(ctx)
-		a.storeArgo(gen, id, func() {
-			a.argoRepos = repos
-			a.argoReposReady = true
-			a.argoRepoErr = repoErr
+		a.storeArgo(tabID, gen, func(b *tabBody) {
+			b.argoRepos = repos
+			b.argoReposReady = true
+			b.argoRepoErr = repoErr
 		})
 	}()
 	go func() {
 		defer wg.Done()
 		clusters, clusterErr := a.fetchArgoClusters(ctx)
-		a.storeArgo(gen, id, func() {
-			a.argoClusters = clusters
-			a.argoClustersReady = true
-			a.argoClusterErr = clusterErr
+		a.storeArgo(tabID, gen, func(b *tabBody) {
+			b.argoClusters = clusters
+			b.argoClustersReady = true
+			b.argoClusterErr = clusterErr
 		})
 	}()
 	wg.Wait()
-	a.storeArgo(gen, id, func() { a.listLoading = false })
+	a.storeArgo(tabID, gen, func(b *tabBody) {
+		b.listLoading = false
+		b.loaded = true
+	})
 }
 
-func (a *App) storeArgo(gen int, id string, fn func()) {
+func (a *App) storeArgo(tabID string, gen int, fn func(*tabBody)) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if gen != a.listGen || id != a.selected {
+	b := a.bodies[tabID]
+	if b == nil || gen != b.listGen {
 		return
 	}
-	fn()
+	fn(b)
+	if a.active == tabID {
+		a.projectListLocked(b)
+	}
 	a.invalidate()
 }
 

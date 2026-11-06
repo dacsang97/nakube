@@ -53,6 +53,11 @@ type App struct {
 	window  *mygo.Window
 	redraw  func()
 	router  *ui.Router
+	tabs    *tabStrip
+	active  string
+	bodies  map[string]*tabBody
+	dragID  string
+	dragAcc float32
 
 	selected   string
 	appearance Appearance
@@ -399,42 +404,46 @@ func (a *App) view(c *ui.Context) {
 	samples := append([]overview.Sample(nil), a.samples...)
 	current := a.current
 	errText := a.errText
-	prev := a.selected
 	confirm := a.confirm
 	a.mu.Unlock()
-	if a.router == nil {
-		a.router = ui.NewRouter("/overview")
-	}
+	a.followRouter()
 
 	t := c.Theme()
-	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(shellBackdrop(t)).Padding(shellGap).Gap(shellGap).Children(func() {
+	shell := ui.Row(c).Fill().AlignItems(ui.Stretch).Background(shellBackdrop(t)).Padding(shellGap).Gap(shellGap)
+	shell.Children(func() {
 		ui.Row(c).Shrink(0).FillHeight().Radius(shellRadius).Clip().Background(t.Surface).Border(1, t.Border).Children(func() {
 			a.drawActivityBar(c, t, current)
 			a.drawSide(c, t)
 		})
-		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Padding(12, 16).Gap(12).Children(func() {
-			if errText != "" {
-				ui.Text(c, errText).TextColor(t.Danger)
-			}
-			a.router.View(c, func(r *ui.Route) {
-				a.drawPage(c, t, r, current, confirm, snap, samples, wait)
+		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Children(func() {
+			a.drawTabs(c, t)
+			ui.Column(c).Grow(1).MinWidth(0).FillWidth().Padding(12, 16).Gap(12).Children(func() {
+				if errText != "" {
+					ui.Text(c, errText).TextColor(t.Danger)
+				}
+				a.router.View(c, func(r *ui.Route) {
+					a.drawPage(c, t, r, current, confirm, snap, samples, wait)
+				})
 			})
 		})
 	})
-
-	id := screenID(a.router.Path())
-	if id == prev {
-		return
-	}
-	a.row = 0
-	a.leaveOverlay()
-	a.mu.Lock()
-	a.selected = id
-	a.mu.Unlock()
-	a.loadList(id)
+	a.tabKeys(shell)
 }
 
 func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, confirm *Confirm, shown overview.Snapshot, samples []overview.Sample, wait overview.Wait) {
+	if d := a.activeDetail(); d != nil {
+		r.Title(d.title)
+		switch d.kind {
+		case "logs":
+			a.drawLogs(c, t)
+		case "exec":
+			a.drawExec(c, t)
+		case "yaml":
+			a.drawYAML(c, t)
+		}
+		a.confirmDialog(c, t, confirm)
+		return
+	}
 	switch {
 	case r.Match("/catalog"):
 		r.Title("Catalog")
@@ -509,33 +518,23 @@ func (a *App) markListed() {
 }
 
 func (a *App) openPage(id string) {
-	if a.router == nil {
-		return
-	}
-	a.router.Push(pagePath(id))
+	a.showScreen(id, true)
 }
 
 func (a *App) togglePage(path string) {
-	if a.router == nil {
+	a.ensureTabs()
+	id := screenID(path)
+	if a.tabs.Screen(a.active) == id {
+		a.closeTab(a.active)
 		return
 	}
-	if a.router.Path() == path {
-		a.router.Back()
-		if a.router.Path() == path {
-			a.router.Replace("/overview")
-		}
-		return
-	}
-	a.router.Push(path)
+	a.showScreen(id, true)
 }
 
 func (a *App) closeCatalog() {
-	if a.router == nil || a.router.Path() != "/catalog" {
-		return
-	}
-	a.router.Back()
-	if a.router.Path() == "/catalog" {
-		a.router.Replace("/overview")
+	a.ensureTabs()
+	if id, ok := a.tabs.byScreen("catalog"); ok {
+		a.closeTab(id)
 	}
 }
 
