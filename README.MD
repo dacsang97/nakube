@@ -3,3 +3,58 @@
 A native desktop app for one Kubernetes context.
 
 The window is native, so it stays fast. The interface is quiet: clear type, calm color, and room to work.
+
+`github.com/dacsang97/nakube` · `io.gnas.nakube`
+
+## Develop
+
+Go 1.27.3 or newer.
+
+```sh
+go tool mygo dev
+```
+
+Quit the window, or press Ctrl+C. `go tool mygo dev` sets `TERM`, so the login-shell import is skipped. A Dock launch runs that import in the background and does not wait for the first frame.
+
+```sh
+go test ./...
+```
+
+Tests need no cluster and no display. A missing kubeconfig is not a failure.
+
+## Editor
+
+One tab per screen. A click opens a preview and replaces the previous one. A double click pins it. A drag reorders the strip. Logs, a shell, and YAML open beside the list. Closing the last tab returns to Overview.
+
+| | macOS | Elsewhere |
+|---|---|---|
+| Close | Command-W | Ctrl-W |
+| Previous / next | Command-Option-Left / Right | Ctrl-PageDown / Ctrl-PageUp |
+| Jump | Command-1–8, Command-9 last | Ctrl-1–8, Ctrl-9 last |
+
+## Checks
+
+CI runs these on pull requests and on `main`. They do not package the app.
+
+```sh
+make fmt-check
+make vet
+make test
+make lint
+```
+
+## Phone
+
+The phone app stores a MagicDNS name and calls `http://<name>:47623` on the tailnet. Cleartext HTTP is allowed for `ts.net`. Restart and delete confirm on the phone. A bare pod cannot be restarted.
+
+## Release
+
+`scripts/release.sh` stops unless `MACOS_SIGNING_IDENTITY` and `NOTARY_KEYCHAIN_PROFILE` are set. It does not commit signing fields or store an Apple password. Windows stays unsigned. Linux keeps `webview` false, so the package does not pull WebKitGTK.
+
+## MCP
+
+```sh
+nakube mcp
+```
+
+Stdio only. It reads the context file written by desktop `Use`, or kubeconfig `current-context` when that file is absent. It can list, get, stream logs, and exec. It cannot apply, delete, or scale.
