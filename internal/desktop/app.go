@@ -453,6 +453,7 @@ func (a *App) view(c *ui.Context) {
 	snap := overview.From(a.nodes, a.pods, a.events, a.usage, a.usageErr, time.Now())
 	samples := append([]overview.Sample(nil), a.samples...)
 	current := a.current
+	contexts := a.contexts
 	errText := a.errText
 	confirm := a.confirm
 	a.mu.Unlock()
@@ -464,7 +465,7 @@ func (a *App) view(c *ui.Context) {
 	shell.Children(func() {
 		ui.Row(c).Shrink(0).FillHeight().Radius(shellRadius).Clip().Background(t.Surface).Border(1, t.Border).Children(func() {
 			a.drawActivityBar(c, t, current)
-			a.drawSide(c, t, current)
+			a.drawSide(c, t, current, contexts)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Label("Main content panel").Children(func() {
 			a.drawTabs(c, t)

@@ -209,7 +209,7 @@ func (a *App) drawContextHeader(c *ui.Context, t *ui.Theme, current string) {
 	ui.Text(c, current).FontSize(13).FontWeight(650).SingleLine().Tooltip(current)
 }
 
-func (a *App) drawSide(c *ui.Context, t *ui.Theme, current string) {
+func (a *App) drawSide(c *ui.Context, t *ui.Theme, current string, contexts []string) {
 	page := ""
 	if a.router != nil {
 		page = screenID(a.router.Path())
@@ -223,9 +223,9 @@ func (a *App) drawSide(c *ui.Context, t *ui.Theme, current string) {
 		})
 		ui.Scroll(c).Grow(1).FillHeight().Children(func() {
 			ui.Column(c).Padding(4, 8, 8, 8).Gap(2).Children(func() {
-				if len(a.contexts) > 0 {
+				if len(contexts) > 0 {
 					ui.Text(c, "CONTEXTS").FontSize(11).FontWeight(600).TextColor(t.TextMuted).Padding(8, 8, 2, 8)
-					for _, name := range a.contexts {
+					for _, name := range contexts {
 						a.contextRow(c, t, name, name == current)
 					}
 				}
