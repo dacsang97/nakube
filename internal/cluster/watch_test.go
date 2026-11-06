@@ -11,7 +11,7 @@ import (
 
 func TestWatchedKinds(t *testing.T) {
 	want := map[string]bool{
-		"Pod": true, "Node": true, "Event": true,
+		"Pod": true, "Node": true, "Namespace": true, "Event": true,
 		"Deployment": true, "ReplicaSet": true, "DaemonSet": true,
 		"StatefulSet": true, "Job": true, "CronJob": true,
 	}

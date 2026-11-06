@@ -24,7 +24,7 @@ Tests need no cluster and no display. A missing kubeconfig is not a failure.
 
 ## Editor
 
-One tab per screen. A click opens a preview and replaces the previous one. A double click pins it. A drag reorders the strip. Logs, a shell, and YAML open beside the list. Closing the last tab returns to Overview.
+One tab per screen. A click opens a preview and replaces the previous one. A double click pins it. A drag reorders the strip. Logs, a shell, and YAML open beside the list. Nodes, Namespaces, and Events can be searched. Click a row to open its details beside the list. Closing the last tab returns to Overview.
 
 | | macOS | Elsewhere |
 |---|---|---|

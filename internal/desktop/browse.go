@@ -108,6 +108,8 @@ func watchKind(id string) string {
 		return "Pod"
 	case "nodes":
 		return "Node"
+	case "namespaces":
+		return "Namespace"
 	case "events":
 		return "Event"
 	default:
@@ -123,10 +125,6 @@ func placeholderColumns(id string) []string {
 		return []string{"Namespace", "Name", "Sync", "Health"}
 	case "pods":
 		return []string{"Namespace", "Name", "Phase", "Ready"}
-	case "nodes":
-		return []string{"Name", "Status", "Age"}
-	case "events":
-		return []string{"Namespace", "Name", "Reason", "Message"}
 	case "workloads":
 		return []string{"Phase", "Pods"}
 	case "port-forwards":
@@ -393,7 +391,7 @@ func (a *App) loadList(id string) {
 
 func isLive(id string) bool {
 	switch id {
-	case "", "overview", "workloads", "pods", "nodes", "events", "port-forwards", "settings", "catalog":
+	case "", "overview", "workloads", "pods", "nodes", "namespaces", "events", "port-forwards", "settings", "catalog":
 		return true
 	default:
 		return false
@@ -418,10 +416,6 @@ func (a *App) liveRowsLocked(id string) ([]string, []listRow) {
 		return workloadSummary(a.pods)
 	case "pods":
 		return podTable(a.pods)
-	case "nodes":
-		return nodeTable(a.nodes)
-	case "events":
-		return eventTable(a.events)
 	case "port-forwards":
 		return forwardTable(a.forwards)
 	default:
@@ -614,47 +608,6 @@ func podTable(pods map[string]*corev1.Pod) ([]string, []listRow) {
 	return []string{"Namespace", "Name", "Phase", "Ready"}, out
 }
 
-func nodeTable(nodes map[string]*corev1.Node) ([]string, []listRow) {
-	gvr := schema.GroupVersionResource{Version: "v1", Resource: "nodes"}
-	out := make([]listRow, 0, len(nodes))
-	now := time.Now()
-	for _, node := range nodes {
-		if node == nil {
-			continue
-		}
-		out = append(out, listRow{
-			Cells:    []string{node.Name, nodeReady(node), ageText(node.CreationTimestamp.Time, now)},
-			Name:     node.Name,
-			Identity: cluster.Identity{GVR: gvr, Kind: "Node", Name: node.Name},
-		})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return []string{"Name", "Status", "Age"}, out
-}
-
-func eventTable(events map[string]*corev1.Event) ([]string, []listRow) {
-	gvr := schema.GroupVersionResource{Version: "v1", Resource: "events"}
-	out := make([]listRow, 0, len(events))
-	for _, ev := range events {
-		if ev == nil {
-			continue
-		}
-		out = append(out, listRow{
-			Cells:     []string{ev.Namespace, ev.Name, ev.Reason, trimText(ev.Message, 80)},
-			Namespace: ev.Namespace,
-			Name:      ev.Name,
-			Identity:  cluster.Identity{GVR: gvr, Kind: "Event", Namespace: ev.Namespace, Name: ev.Name},
-		})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Namespace == out[j].Namespace {
-			return out[i].Name < out[j].Name
-		}
-		return out[i].Namespace < out[j].Namespace
-	})
-	return []string{"Namespace", "Name", "Reason", "Message"}, out
-}
-
 func forwardTable(items []*cluster.Forward) ([]string, []listRow) {
 	out := make([]listRow, 0, len(items))
 	for _, fw := range items {
@@ -683,18 +636,6 @@ func readyCount(pod *corev1.Pod) string {
 	return fmt.Sprintf("%d/%d", ready, total)
 }
 
-func nodeReady(node *corev1.Node) string {
-	for _, cond := range node.Status.Conditions {
-		if cond.Type == corev1.NodeReady {
-			if cond.Status == corev1.ConditionTrue {
-				return "Ready"
-			}
-			return "NotReady"
-		}
-	}
-	return "Unknown"
-}
-
 func ageText(created, now time.Time) string {
 	if created.IsZero() {
 		return ""
@@ -704,14 +645,6 @@ func ageText(created, now time.Time) string {
 		d = 0
 	}
 	return d.Truncate(time.Second).String()
-}
-
-func trimText(s string, n int) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
 }
 
 func kindLabel(id string) string {

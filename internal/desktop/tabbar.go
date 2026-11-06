@@ -48,7 +48,11 @@ func (a *App) showScreen(screen string, ephemeral bool) {
 	if a.bodies == nil {
 		a.bodies = map[string]*tabBody{}
 	}
-	a.bodies[id] = newTabBody()
+	body := newTabBody()
+	if inspectScreen(screen) {
+		body.row = -1
+	}
+	a.bodies[id] = body
 	a.active = id
 	a.mu.Unlock()
 	a.restore()
@@ -64,6 +68,9 @@ func (a *App) showScreen(screen string, ephemeral bool) {
 func (a *App) bindCurrent(screen string) {
 	a.ensureTabs()
 	id, _, closed := a.tabs.Show(screen, true)
+	if inspectScreen(screen) && a.listKey == "" {
+		a.row = -1
+	}
 	b := a.capture()
 	b.loaded = true
 	b.listID = screen

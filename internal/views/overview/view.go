@@ -87,7 +87,7 @@ func Draw(c *ui.Context, t *ui.Theme, snap Snapshot, samples []Sample, contextNa
 							Reason: ev.Reason,
 							Object: ev.Object,
 							Body:   ev.Message,
-							Age:    Age(ev.When, now),
+							Age:    kit.Age(ev.When, now),
 						}
 					}
 					var open func()

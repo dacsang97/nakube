@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/egoist/mygo/plugins/terminal"
+	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 
 	"github.com/dacsang97/nakube/internal/cluster"
@@ -56,6 +57,11 @@ type tabBody struct {
 	listNotice  string
 	listCols    []string
 	listRows    []listRow
+	listQuery   string
+	listFilter  int
+	listSort    ui.SortOrder
+	listColumns ui.TableLayout
+	listKey     string
 
 	argoApps          []cluster.ArgoApp
 	argoSets          []cluster.ArgoApplicationSet
@@ -200,6 +206,11 @@ func saveInto(a *App, b *tabBody) {
 	b.listNotice = a.listNotice
 	b.listCols = a.listCols
 	b.listRows = a.listRows
+	b.listQuery = a.listQuery
+	b.listFilter = a.listFilter
+	b.listSort = a.listSort
+	b.listColumns = cloneLayout(a.listColumns)
+	b.listKey = a.listKey
 	b.argoApps = a.argoApps
 	b.argoSets = a.argoSets
 	b.argoProjects = a.argoProjects
@@ -253,6 +264,12 @@ func loadFrom(a *App, b *tabBody) {
 	a.listNotice = b.listNotice
 	a.listCols = b.listCols
 	a.listRows = b.listRows
+	a.listQuery = b.listQuery
+	a.listFilter = b.listFilter
+	a.listSort = b.listSort
+	a.listColumns = cloneLayout(b.listColumns)
+	a.listKey = b.listKey
+	a.listState = ui.ListState{}
 	a.argoApps = b.argoApps
 	a.argoSets = b.argoSets
 	a.argoProjects = b.argoProjects
