@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/dacsang97/nakube/internal/cluster"
@@ -65,16 +66,17 @@ type App struct {
 	current    string
 	errText    string
 
-	pods         map[string]*corev1.Pod
-	nodes        map[string]*corev1.Node
-	namespaces   map[string]*corev1.Namespace
-	events       map[string]*corev1.Event
-	usage        cluster.Usage
-	usageErr     error
-	samples      []overview.Sample
-	seen         map[string]bool
-	watchSettled bool
-	metricsSeen  bool
+	pods            map[string]*corev1.Pod
+	nodes           map[string]*corev1.Node
+	namespaces      map[string]*corev1.Namespace
+	events          map[string]*corev1.Event
+	workloadObjects map[string]runtime.Object
+	usage           cluster.Usage
+	usageErr        error
+	samples         []overview.Sample
+	seen            map[string]bool
+	watchSettled    bool
+	metricsSeen     bool
 
 	overviewRole   string
 	overviewMetric string
@@ -131,26 +133,30 @@ type App struct {
 	argoReposReady    bool
 	argoClustersReady bool
 
-	listGen       int
-	listID        string
-	listLoading   bool
-	listErr       string
-	listNotice    string
-	listCols      []string
-	listRows      []listRow
-	listQuery     string
-	listFilter    int
-	listSort      ui.SortOrder
-	listColumns   ui.TableLayout
-	listKey       string
-	listState     ui.ListState
-	catalogLoaded bool
-	catalogSynced time.Time
-	catalogPins   []string
-	catalogFiles  []string
-	catalogErr    string
-	addPath       string
-	paste         *editor.State
+	listGen           int
+	listID            string
+	listLoading       bool
+	listErr           string
+	listNotice        string
+	listCols          []string
+	listRows          []listRow
+	listQuery         string
+	listFilter        int
+	listSort          ui.SortOrder
+	listColumns       ui.TableLayout
+	listKey           string
+	listState         ui.ListState
+	detailPanel       *shellDetailPanel
+	detailPanelOpen   bool
+	detailCopiedKey   string
+	detailCopiedUntil time.Time
+	catalogLoaded     bool
+	catalogSynced     time.Time
+	catalogPins       []string
+	catalogFiles      []string
+	catalogErr        string
+	addPath           string
+	paste             *editor.State
 
 	sidebarWidth float32
 	sideDrag     float32
@@ -166,22 +172,24 @@ func New(session *cluster.Session) *App {
 		session = cluster.NewSession()
 	}
 	return &App{
-		session:        session,
-		router:         ui.NewRouter("/overview"),
-		selected:       "overview",
-		appearance:     DefaultAppearance(),
-		pods:           map[string]*corev1.Pod{},
-		nodes:          map[string]*corev1.Node{},
-		namespaces:     map[string]*corev1.Namespace{},
-		events:         map[string]*corev1.Event{},
-		scaleTo:        "1",
-		forwardLocal:   "8080",
-		forwardRemote:  "80",
-		rollbackRev:    "1",
-		helmNamespace:  "default",
-		overviewRole:   overview.Worker,
-		overviewMetric: overview.CPU,
-		overviewRange:  "15m",
+		session:         session,
+		router:          ui.NewRouter("/overview"),
+		selected:        "overview",
+		appearance:      DefaultAppearance(),
+		pods:            map[string]*corev1.Pod{},
+		nodes:           map[string]*corev1.Node{},
+		namespaces:      map[string]*corev1.Namespace{},
+		events:          map[string]*corev1.Event{},
+		workloadObjects: map[string]runtime.Object{},
+		row:             -1,
+		scaleTo:         "1",
+		forwardLocal:    "8080",
+		forwardRemote:   "80",
+		rollbackRev:     "1",
+		helmNamespace:   "default",
+		overviewRole:    overview.Worker,
+		overviewMetric:  overview.CPU,
+		overviewRange:   "15m",
 	}
 }
 
@@ -265,6 +273,7 @@ func (a *App) startWatch(ctx context.Context) {
 	a.nodes = map[string]*corev1.Node{}
 	a.namespaces = map[string]*corev1.Namespace{}
 	a.events = map[string]*corev1.Event{}
+	a.workloadObjects = map[string]runtime.Object{}
 	a.samples = nil
 	a.usage = cluster.Usage{}
 	a.usageErr = nil
@@ -331,6 +340,7 @@ func (a *App) onWatch(ev cluster.WatchEvent) {
 
 func (a *App) fold(ev cluster.WatchEvent) {
 	key := objectKey(ev.Object)
+	a.foldWorkload(ev, key)
 	switch ev.Kind {
 	case "Pod":
 		if ev.Type == "delete" {
@@ -367,6 +377,25 @@ func (a *App) fold(ev cluster.WatchEvent) {
 		if event, ok := ev.Object.(*corev1.Event); ok {
 			a.events[key] = event.DeepCopy()
 		}
+	}
+}
+
+func (a *App) foldWorkload(ev cluster.WatchEvent, key string) {
+	switch ev.Kind {
+	case "Pod", "Deployment", "ReplicaSet", "DaemonSet", "StatefulSet", "Job", "CronJob":
+	default:
+		return
+	}
+	if a.workloadObjects == nil {
+		a.workloadObjects = map[string]runtime.Object{}
+	}
+	key = ev.Kind + "/" + key
+	if ev.Type == "delete" {
+		delete(a.workloadObjects, key)
+		return
+	}
+	if ev.Object != nil {
+		a.workloadObjects[key] = ev.Object.DeepCopyObject()
 	}
 }
 
@@ -426,6 +455,7 @@ func (a *App) view(c *ui.Context) {
 	errText := a.errText
 	confirm := a.confirm
 	a.mu.Unlock()
+	a.detailPanel = nil
 	a.followRouter()
 
 	t := c.Theme()
@@ -435,7 +465,7 @@ func (a *App) view(c *ui.Context) {
 			a.drawActivityBar(c, t, current)
 			a.drawSide(c, t)
 		})
-		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Label("Main content panel").Children(func() {
 			a.drawTabs(c, t)
 			ui.Column(c).Grow(1).MinWidth(0).FillWidth().Padding(12, 16).Gap(12).Children(func() {
 				if errText != "" {
@@ -446,6 +476,7 @@ func (a *App) view(c *ui.Context) {
 				})
 			})
 		})
+		a.drawDetailPanel(c, t)
 	})
 	a.tabKeys(shell)
 }

@@ -18,12 +18,12 @@ const (
 )
 
 // Draw paints the event list. It does not load it.
-func Draw(c *ui.Context, t *ui.Theme, page Page, query *string, state *ui.ListState, loading bool, actions func(*ui.Context)) {
+func Draw(c *ui.Context, t *ui.Theme, page Page, query *string, state *ui.ListState, loading bool) kit.Selection {
 	empty := "None"
 	if page.Total > 0 && len(page.Rows) == 0 {
 		empty = "No matches"
 	}
-	kit.DrawBoard(c, t, kit.Board{
+	return kit.DrawBoard(c, t, kit.Board{
 		Title:   "Events",
 		Count:   kit.Count(len(page.Rows), page.Total),
 		Empty:   empty,
@@ -35,16 +35,6 @@ func Draw(c *ui.Context, t *ui.Theme, page Page, query *string, state *ui.ListSt
 		State:   state,
 		Cell: func(c *ui.Context, row, col int) {
 			cell(c, t, page.Rows[row], col, kit.Chosen(state, row, col))
-		},
-		Detail: func(c *ui.Context) {
-			if state == nil || state.Selected == nil {
-				return
-			}
-			i := *state.Selected
-			if i < 0 || i >= len(page.Rows) {
-				return
-			}
-			kit.DetailView(c, t, page.Rows[i].Detail, actions)
 		},
 	})
 }

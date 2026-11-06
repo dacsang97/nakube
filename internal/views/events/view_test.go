@@ -24,7 +24,7 @@ func TestDrawShowsWarningObjectAndMessage(t *testing.T) {
 	query := ""
 	selected := 0
 	tt := ui.NewTester(func(c *ui.Context) {
-		Draw(c, c.Theme(), page, &query, &ui.ListState{Selected: &selected}, false, nil)
+		Draw(c, c.Theme(), page, &query, &ui.ListState{Selected: &selected}, false)
 	}, 1100, 700)
 	for _, want := range []string{"Events", "Warning", "Failed", "Pod/api", "secret-token was not found", "3"} {
 		if !tt.HasText(want) {

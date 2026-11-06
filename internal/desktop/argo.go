@@ -30,7 +30,27 @@ func (a *App) drawArgo(c *ui.Context, t *ui.Theme, id string) {
 	a.mu.Lock()
 	page := a.argoPageLocked(id)
 	a.mu.Unlock()
-	argo.Draw(c, t, page)
+	selection := argo.Draw(c, t, page)
+	title := argo.DetailTitle(page, selection.Index)
+	editAction, removeAction := argo.HeaderActions(page, selection.Index)
+	action := func(name string) func() {
+		if name == "" {
+			return nil
+		}
+		return func() {
+			page.OnAction(selection.Index, name)
+		}
+	}
+	a.offerDetailPanel(selection.Changed, selection.Valid, shellDetailPanel{
+		title:    title,
+		label:    labelFor(id) + " details panel",
+		copyText: title,
+		onEdit:   action(editAction),
+		onRemove: action(removeAction),
+		draw: func(c *ui.Context, t *ui.Theme) {
+			argo.Detail(c, t, page, selection.Index)
+		},
+	})
 }
 
 func (a *App) argoPageLocked(id string) argo.Page {

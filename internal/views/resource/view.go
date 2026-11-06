@@ -9,6 +9,7 @@ import (
 // Row is one table row. Kind chooses the action buttons.
 type Row struct {
 	Kind  string
+	Name  string
 	Cells []string
 }
 
@@ -30,7 +31,7 @@ type List struct {
 }
 
 // Draw paints the list. It does not load it.
-func Draw(c *ui.Context, t *ui.Theme, list List) {
+func Draw(c *ui.Context, t *ui.Theme, list List) kit.Selection {
 	ui.Text(c, list.Title).FontSize(22).Bold()
 	switch {
 	case list.Err != "":
@@ -47,17 +48,34 @@ func Draw(c *ui.Context, t *ui.Theme, list List) {
 		ui.Text(c, text).TextColor(t.TextMuted)
 	}
 	if len(list.Rows) == 0 || list.Selected == nil {
-		return
+		return kit.Selection{Index: -1}
 	}
-	if *list.Selected < 0 || *list.Selected >= len(list.Rows) {
-		*list.Selected = 0
-	}
-	row := list.Rows[*list.Selected]
-	inputs(c, row.Kind, list)
-	actions(c, t, *list.Selected, row.Kind, list.OnAction)
-	ui.Table(c, &ui.ListState{Selected: list.Selected}, columns(list.Columns), len(list.Rows), func(i, col int) {
+	table := ui.Table(c, &ui.ListState{Selected: list.Selected}, columns(list.Columns), len(list.Rows), func(i, col int) {
 		ui.Text(c, list.Rows[i].Cells[col])
 	}).Fill()
+	index := *list.Selected
+	return kit.Selection{Index: index, Valid: index >= 0 && index < len(list.Rows), Changed: table.Changed()}
+}
+
+// Detail paints one generic resource's panel body.
+func Detail(c *ui.Context, t *ui.Theme, list List, index int) {
+	if index < 0 || index >= len(list.Rows) {
+		return
+	}
+	row := list.Rows[index]
+	facts := make([]kit.Fact, 0, len(list.Columns))
+	for i, label := range list.Columns {
+		if i < len(row.Cells) {
+			facts = append(facts, kit.Fact{Label: label, Value: row.Cells[i]})
+		}
+	}
+	kit.Facts(c, t, facts)
+	inputs(c, row.Kind, list)
+	actionButtons(c, t, BodyActions(row.Kind), func(action string) {
+		if list.OnAction != nil {
+			list.OnAction(index, action)
+		}
+	})
 }
 
 func inputs(c *ui.Context, kind string, list List) {
@@ -74,25 +92,45 @@ func inputs(c *ui.Context, kind string, list List) {
 	}
 }
 
-func actions(c *ui.Context, t *ui.Theme, index int, kind string, on func(int, string)) {
-	Buttons(c, t, kind, func(action string) {
-		if on != nil {
-			on(index, action)
+// HeaderActions returns the action IDs promoted to the shared detail header.
+func HeaderActions(kind string) (edit, remove string) {
+	for _, action := range Actions(kind) {
+		switch action {
+		case "yaml":
+			edit = action
+		case "delete", "uninstall":
+			remove = action
 		}
-	})
+	}
+	return edit, remove
+}
+
+// BodyActions returns actions that need controls or context in the panel body.
+func BodyActions(kind string) []string {
+	edit, remove := HeaderActions(kind)
+	names := Actions(kind)
+	body := make([]string, 0, len(names))
+	for _, action := range names {
+		if action != edit && action != remove {
+			body = append(body, action)
+		}
+	}
+	return body
 }
 
 // Buttons paints the actions for a kind. The caller owns the selected row.
-// Delete is danger-colored so it is not a peer of the other actions.
 func Buttons(c *ui.Context, t *ui.Theme, kind string, on func(string)) {
-	names := Actions(kind)
+	actionButtons(c, t, Actions(kind), on)
+}
+
+func actionButtons(c *ui.Context, t *ui.Theme, names []string, on func(string)) {
 	if len(names) == 0 {
 		return
 	}
-	ui.Row(c).Gap(6).Shrink(0).Children(func() {
+	ui.Row(c).Gap(6).Shrink(0).Wrap().Children(func() {
 		for _, action := range names {
 			b := ui.Button(c, actionLabel(action)).Shrink(0)
-			if action == "delete" && t != nil {
+			if (action == "delete" || action == "uninstall") && t != nil {
 				b.TextColor(t.Danger)
 			}
 			if b.Clicked() && on != nil {

@@ -2,12 +2,22 @@ package desktop
 
 import (
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
 
-// The shell is two cards on a gutter. The activity bar and sidebar share
-// one card. The editor is the other. Both sit inset from the window.
+type shellDetailPanel struct {
+	title    string
+	label    string
+	copyText string
+	onEdit   func()
+	onRemove func()
+	draw     func(*ui.Context, *ui.Theme)
+}
+
+// The activity bar and sidebar share the left shell card. The editor is the
+// center card; selected resources add an aligned detail card on the right.
 const (
 	activityBarW   = 48
 	activitySlot   = 40
@@ -32,6 +42,85 @@ func editorCard(t *ui.Theme) ui.Color {
 		return t.Surface
 	}
 	return t.Background
+}
+
+func rightPanel(c *ui.Context, t *ui.Theme, label string) ui.Element {
+	return ui.Column(c).Width(360).MaxWidthPercent(38).Shrink(0).FillHeight().
+		Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).
+		Label(label)
+}
+
+func (a *App) offerDetailPanel(changed, valid bool, panel shellDetailPanel) {
+	if changed {
+		a.detailPanelOpen = true
+	}
+	if !valid {
+		a.detailPanelOpen = false
+		return
+	}
+	if a.detailPanelOpen {
+		a.detailPanel = &panel
+	}
+}
+
+func (a *App) drawDetailPanel(c *ui.Context, t *ui.Theme) {
+	if a.detailPanel == nil {
+		return
+	}
+	panel := a.detailPanel
+	rightPanel(c, t, panel.label).Children(func() {
+		ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 8, 0, 12).Gap(4).AlignItems(ui.Center).Background(tabInactive(t)).Label("Detail panel header").Children(func() {
+			ui.Row(c).Grow(1).MinWidth(0).Gap(4).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, panel.title).FontSize(13).FontWeight(650).SingleLine().Shrink(1).MinWidth(0)
+				copyKey := panel.label + "\x00" + panel.title + "\x00" + panel.copyText
+				copyLabel, copyIcon := "Copy name", "copy"
+				if a.detailCopiedKey == copyKey && c.Now().Before(a.detailCopiedUntil) {
+					copyLabel, copyIcon = "Copied", "check"
+				}
+				copyButton := panelHeaderButton(c, t, copyLabel, copyIcon, false)
+				if copyButton.Clicked() {
+					c.WriteClipboard(panel.copyText)
+					a.detailCopiedKey = copyKey
+					a.detailCopiedUntil = c.Now().Add(2 * time.Second)
+					c.After(2 * time.Second)
+				}
+			})
+			if panel.onEdit != nil && panelHeaderButton(c, t, "Edit", "pencil", false).Clicked() {
+				panel.onEdit()
+			}
+			if panel.onRemove != nil && panelHeaderButton(c, t, "Remove", "trash-2", true).Clicked() {
+				panel.onRemove()
+			}
+			if panelHeaderButton(c, t, "Close details", "x", false).Clicked() {
+				a.row = -1
+				a.listKey = ""
+				a.detailPanel = nil
+				a.detailPanelOpen = false
+			}
+		})
+		ui.Scroll(c).Grow(1).FillHeight().Children(func() {
+			ui.Column(c).Padding(16).Gap(16).Children(func() {
+				panel.draw(c, t)
+			})
+		})
+	})
+}
+
+func panelHeaderButton(c *ui.Context, t *ui.Theme, label, icon string, danger bool) ui.Element {
+	button := ui.Button(c, "").Size(26, 26).Padding(0).Radius(4).AlignItems(ui.Center).Justify(ui.Center).Tooltip(label).Label(label)
+	button.Border(0, ui.Transparent)
+	if button.Hovered() {
+		button.Background(t.SurfacePressed)
+	}
+	if danger {
+		button.TextColor(t.Danger)
+	} else {
+		button.TextColor(t.TextMuted)
+	}
+	button.Children(func() {
+		ui.Icon(c, IconNamed(icon)).Size(14, 14)
+	})
+	return button
 }
 
 func (a *App) sideWidth() float32 {
@@ -118,7 +207,7 @@ func (a *App) drawSide(c *ui.Context, t *ui.Theme) {
 		page = screenID(a.router.Path())
 	}
 	ui.Column(c).Width(a.sideWidth()).Shrink(0).FillHeight().Background(t.Surface).Children(func() {
-		ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 12).AlignItems(ui.Center).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
+		ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 12).AlignItems(ui.Center).Background(tabInactive(t)).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Label("Sidebar header").Children(func() {
 			ui.Text(c, "NaKube").FontSize(13).FontWeight(650).SingleLine()
 		})
 		ui.Column(c).Shrink(0).Padding(8, 8, 4, 8).Children(func() {

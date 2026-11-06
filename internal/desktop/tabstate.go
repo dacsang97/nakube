@@ -17,7 +17,8 @@ import (
 type tabBody struct {
 	loaded bool
 
-	row int
+	row             int
+	detailPanelOpen bool
 
 	mode       string
 	logLines   []LogLine
@@ -81,6 +82,7 @@ type tabBody struct {
 
 func newTabBody() *tabBody {
 	return &tabBody{
+		row:           -1,
 		scaleTo:       "1",
 		forwardLocal:  "8080",
 		forwardRemote: "80",
@@ -172,6 +174,7 @@ func (a *App) capture() *tabBody {
 
 func saveInto(a *App, b *tabBody) {
 	b.row = a.row
+	b.detailPanelOpen = a.detailPanelOpen
 	b.mode = a.mode
 	b.logLines = a.logLines
 	b.logFilter = a.logFilter
@@ -230,6 +233,7 @@ func saveInto(a *App, b *tabBody) {
 
 func loadFrom(a *App, b *tabBody) {
 	a.row = b.row
+	a.detailPanelOpen = b.detailPanelOpen
 	a.mode = b.mode
 	a.logLines = b.logLines
 	a.logFilter = b.logFilter

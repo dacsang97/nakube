@@ -8,12 +8,14 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/views/argo"
 	"github.com/dacsang97/nakube/internal/views/overview"
 )
 
@@ -111,6 +113,301 @@ func TestWatchFoldKeepsCopy(t *testing.T) {
 	a.mu.Unlock()
 	if got == nil || got.Status.Phase != corev1.PodRunning {
 		t.Fatal("fold stored the live object")
+	}
+}
+
+func TestWorkloadsPageUsesWatchedResources(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.current = "dev"
+	a.router.Push("/workloads")
+	replicas := int32(2)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "prod"},
+		Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
+		Status:     appsv1.DeploymentStatus{ReadyReplicas: 1},
+	}
+	a.onWatch(cluster.WatchEvent{Type: "add", Kind: "Deployment", Object: deployment})
+	deployment.Status.ReadyReplicas = 2
+
+	tt := ui.NewTester(a.view, 1280, 900)
+	for _, want := range []string{"Overall readiness", "Health by kind", "Inventory", "Deployment", "web", "Active"} {
+		if !tt.HasText(want) {
+			t.Fatalf("missing %q, texts %q", want, tt.Texts())
+		}
+	}
+	stored, ok := a.workloadObjects["Deployment/prod/web"].(*appsv1.Deployment)
+	if !ok || stored.Status.ReadyReplicas != 1 {
+		t.Fatalf("workload watch stored %#v", stored)
+	}
+}
+
+func TestWorkloadDetailsUseSeparateShellPanel(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.current = "dev"
+	a.router.Push("/workloads")
+	replicas := int32(2)
+	a.onWatch(cluster.WatchEvent{Type: "add", Kind: "Deployment", Object: &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "prod"},
+		Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
+		Status:     appsv1.DeploymentStatus{ReadyReplicas: 1},
+	}})
+
+	tt := ui.NewTester(a.view, 1280, 900)
+	if tt.HasText("Deployment: web") {
+		t.Fatal("details panel opened without a row selection")
+	}
+	if err := tt.Click("web"); err != nil {
+		t.Fatal(err)
+	}
+	main, mainOK := tt.Find("Main content panel")
+	panel, panelOK := tt.Find("Workload details panel")
+	if !mainOK || !panelOK {
+		t.Fatalf("missing shell panels: main=%v detail=%v", mainOK, panelOK)
+	}
+	if panel.X-main.X-main.W != shellGap || panel.Y != main.Y || panel.H != main.H {
+		t.Fatalf("detail panel is not a separate aligned shell card: main=%+v detail=%+v", main, panel)
+	}
+	sideHeader, sideHeaderOK := tt.Find("Sidebar header")
+	mainHeader, mainHeaderOK := tt.Find("Main header")
+	detailHeader, detailHeaderOK := tt.Find("Detail panel header")
+	if !sideHeaderOK || !mainHeaderOK || !detailHeaderOK ||
+		detailHeader.Y != mainHeader.Y || detailHeader.H != mainHeader.H ||
+		detailHeader.Y != sideHeader.Y || detailHeader.H != sideHeader.H {
+		t.Fatalf("shell headers are not aligned: side=%+v main=%+v detail=%+v", sideHeader, mainHeader, detailHeader)
+	}
+	if !tt.HasText("Deployment: web") {
+		t.Fatal("selected workload details are missing")
+	}
+	for _, want := range []string{"Copy name", "Edit", "Remove", "Close details"} {
+		if _, ok := tt.Find(want); !ok {
+			t.Fatalf("workload detail header missing %q", want)
+		}
+	}
+	if err := tt.Click("Copy name"); err != nil {
+		t.Fatal(err)
+	}
+	if got := tt.Clipboard(); got != "web" {
+		t.Fatalf("workload copy wrote %q", got)
+	}
+	if err := tt.Click("Close details"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tt.Find("Workload details panel"); ok {
+		t.Fatal("close left the details shell panel open")
+	}
+}
+
+func TestInspectScreensUseSharedShellPanel(t *testing.T) {
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name, route, click, panel, detail string
+		setup                             func(*App)
+	}{
+		{
+			name: "node", route: "/nodes", click: "cp", panel: "Node details panel", detail: "Test Linux",
+			setup: func(a *App) {
+				a.onWatch(cluster.WatchEvent{Type: "add", Kind: "Node", Object: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{Name: "cp", CreationTimestamp: metav1.NewTime(now.Add(-time.Hour))},
+					Status: corev1.NodeStatus{
+						Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}},
+						NodeInfo:   corev1.NodeSystemInfo{OSImage: "Test Linux"},
+					},
+				}})
+			},
+		},
+		{
+			name: "namespace", route: "/namespaces", click: "team", panel: "Namespace details panel", detail: "app=shop",
+			setup: func(a *App) {
+				a.onWatch(cluster.WatchEvent{Type: "add", Kind: "Namespace", Object: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{Name: "team", Labels: map[string]string{"app": "shop"}},
+					Status:     corev1.NamespaceStatus{Phase: corev1.NamespaceActive},
+				}})
+			},
+		},
+		{
+			name: "event", route: "/events", click: "Pod/api", panel: "Event details panel", detail: "secret-token was not found",
+			setup: func(a *App) {
+				a.onWatch(cluster.WatchEvent{Type: "add", Kind: "Event", Object: &corev1.Event{
+					ObjectMeta:     metav1.ObjectMeta{Name: "api.1", Namespace: "prod"},
+					Type:           corev1.EventTypeWarning,
+					Reason:         "Failed",
+					Message:        "secret-token was not found",
+					InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "api"},
+				}})
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			a := New(cluster.NewSession())
+			a.current = "dev"
+			a.router.Push(test.route)
+			test.setup(a)
+			tt := ui.NewTester(a.view, 1280, 900)
+			if _, ok := tt.Find(test.panel); ok {
+				t.Fatal("details panel opened without a row selection")
+			}
+			if err := tt.Click(test.click); err != nil {
+				t.Fatal(err)
+			}
+			panel, ok := tt.Find(test.panel)
+			main, mainOK := tt.Find("Main content panel")
+			if !ok || !mainOK || panel.X-main.X-main.W != shellGap || panel.Y != main.Y || panel.H != main.H {
+				t.Fatalf("misaligned shared detail panel: main=%+v panel=%+v", main, panel)
+			}
+			if !tt.HasText(test.detail) {
+				t.Fatalf("missing detail %q in %v", test.detail, tt.Texts())
+			}
+			for _, want := range []string{"Copy name", "Edit", "Remove", "Close details"} {
+				if _, ok := tt.Find(want); !ok {
+					t.Fatalf("%s header missing %q", test.name, want)
+				}
+			}
+		})
+	}
+}
+
+func TestGenericResourcesUseSharedShellPanel(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.row = -1
+	snap := listSnap{
+		columns: []string{"Namespace", "Name", "Phase"},
+		rows: []listRow{{
+			Cells:     []string{"prod", "api", "Running"},
+			Namespace: "prod",
+			Name:      "api",
+			Identity:  cluster.Identity{Kind: "Pod", Namespace: "prod", Name: "api"},
+		}},
+	}
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.detailPanel = nil
+		t := c.Theme()
+		ui.Row(c).Fill().Padding(shellGap).Gap(shellGap).Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Label("Main content panel").Children(func() {
+				ui.Column(c).Grow(1).Padding(12, 16).Children(func() {
+					a.drawList(c, t, "pods", snap)
+				})
+			})
+			a.drawDetailPanel(c, t)
+		})
+	}, 1000, 700)
+	if err := tt.Click("api"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tt.Find("Pod details panel"); !ok {
+		t.Fatalf("generic resource did not open shared panel: %v", tt.Texts())
+	}
+	for _, want := range []string{"Pod: api", "Namespace", "prod", "Phase", "Running", "Logs", "Exec"} {
+		if !tt.HasText(want) {
+			t.Fatalf("generic detail missing %q in %v", want, tt.Texts())
+		}
+	}
+	for _, want := range []string{"Copy name", "Edit", "Remove", "Close details"} {
+		if _, ok := tt.Find(want); !ok {
+			t.Fatalf("generic detail header missing %q", want)
+		}
+	}
+	if err := tt.Click("Copy name"); err != nil {
+		t.Fatal(err)
+	}
+	if got := tt.Clipboard(); got != "api" {
+		t.Fatalf("copy wrote %q", got)
+	}
+	if _, ok := tt.Find("Copied"); !ok {
+		t.Fatal("copy action did not show check feedback")
+	}
+	tt.Advance(2 * time.Second)
+	if _, ok := tt.Find("Copy name"); !ok {
+		t.Fatal("copy feedback did not reset")
+	}
+	if err := tt.Click("Remove"); err != nil {
+		t.Fatal(err)
+	}
+	a.mu.Lock()
+	confirm := a.confirm
+	a.mu.Unlock()
+	if confirm == nil || confirm.Action != "delete" || confirm.Name != "api" {
+		t.Fatalf("remove dispatched %#v", confirm)
+	}
+}
+
+func TestArgoResourcesUseSharedShellPanel(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.row = -1
+	var action string
+	page := argo.Page{
+		ID:       "argo-applications",
+		Context:  "dev",
+		Selected: &a.row,
+		Apps: []argo.App{{
+			Namespace:   "argo",
+			Name:        "shop",
+			Sync:        "OutOfSync",
+			Health:      "Degraded",
+			Destination: "in-cluster/shop",
+		}},
+		OnAction: func(_ int, name string) { action = name },
+	}
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.detailPanel = nil
+		t := c.Theme()
+		ui.Row(c).Fill().Padding(shellGap).Gap(shellGap).Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Label("Main content panel").Children(func() {
+				ui.Column(c).Grow(1).Padding(12, 16).Children(func() {
+					selection := argo.Draw(c, t, page)
+					title := argo.DetailTitle(page, selection.Index)
+					a.offerDetailPanel(selection.Changed, selection.Valid, shellDetailPanel{
+						title:    title,
+						label:    "Applications details panel",
+						copyText: title,
+						onEdit: func() {
+							page.OnAction(selection.Index, "yaml")
+						},
+						onRemove: func() {
+							page.OnAction(selection.Index, "delete")
+						},
+						draw: func(c *ui.Context, t *ui.Theme) {
+							argo.Detail(c, t, page, selection.Index)
+						},
+					})
+				})
+			})
+			a.drawDetailPanel(c, t)
+		})
+	}, 1000, 700)
+	if err := tt.Click("shop"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tt.Find("Applications details panel"); !ok {
+		t.Fatalf("Argo resource did not open shared panel: %v", tt.Texts())
+	}
+	for _, want := range []string{"argo/shop", "OutOfSync", "Degraded", "in-cluster/shop"} {
+		if !tt.HasText(want) {
+			t.Fatalf("Argo detail missing %q in %v", want, tt.Texts())
+		}
+	}
+	for _, want := range []string{"Copy name", "Edit", "Remove", "Close details"} {
+		if _, ok := tt.Find(want); !ok {
+			t.Fatalf("Argo detail header missing %q", want)
+		}
+	}
+	if err := tt.Click("Copy name"); err != nil {
+		t.Fatal(err)
+	}
+	if got := tt.Clipboard(); got != "argo/shop" {
+		t.Fatalf("copy wrote %q", got)
+	}
+	if err := tt.Click("Edit"); err != nil {
+		t.Fatal(err)
+	}
+	if action != "yaml" {
+		t.Fatalf("edit dispatched %q", action)
+	}
+	if err := tt.Click("Remove"); err != nil {
+		t.Fatal(err)
+	}
+	if action != "delete" {
+		t.Fatalf("remove dispatched %q", action)
 	}
 }
 
