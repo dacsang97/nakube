@@ -201,6 +201,23 @@ func (a *App) pinButton(c *ui.Context, t *ui.Theme, name string, active bool) {
 	})
 }
 
+func (a *App) drawContextHeader(c *ui.Context, t *ui.Theme) {
+	if a.current == "" {
+		ui.Text(c, "No context").FontSize(13).FontWeight(650).TextColor(t.TextMuted).SingleLine()
+		return
+	}
+	if len(a.contexts) == 0 {
+		ui.Text(c, a.current).FontSize(13).FontWeight(650).SingleLine().Tooltip(a.current)
+		return
+	}
+	sel := a.current
+	ui.Select(c, &sel, a.contexts).Grow(1).SingleLine().Tooltip(a.current)
+	if sel != a.current {
+		a.switchContext(sel)
+		a.openPage("overview")
+	}
+}
+
 func (a *App) drawSide(c *ui.Context, t *ui.Theme) {
 	page := ""
 	if a.router != nil {
@@ -208,7 +225,7 @@ func (a *App) drawSide(c *ui.Context, t *ui.Theme) {
 	}
 	ui.Column(c).Width(a.sideWidth()).Shrink(0).FillHeight().Background(t.Surface).Children(func() {
 		ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 12).AlignItems(ui.Center).Background(tabInactive(t)).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Label("Sidebar header").Children(func() {
-			ui.Text(c, "NaKube").FontSize(13).FontWeight(650).SingleLine()
+			a.drawContextHeader(c, t)
 		})
 		ui.Column(c).Shrink(0).Padding(8, 8, 4, 8).Children(func() {
 			ui.TextInput(c, &a.menuQuery).Placeholder("Search").Grow(1)

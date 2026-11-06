@@ -425,11 +425,37 @@ func TestEmptyContextView(t *testing.T) {
 	if !tt.HasText("no kube context is configured") {
 		t.Fatalf("texts %q", tt.Texts())
 	}
-	if !tt.HasText("NaKube") || !tt.HasText("Overview") || !tt.HasText("Workloads") || !tt.HasText("Pods") {
+	if _, ok := tt.Find("NaKube"); ok {
+		t.Fatalf("sidebar header still static title, texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("No context"); !ok {
+		t.Fatalf("missing No context header, texts %q", tt.Texts())
+	}
+	if !tt.HasText("Overview") || !tt.HasText("Workloads") || !tt.HasText("Pods") {
 		t.Fatalf("missing menu, texts %q", tt.Texts())
 	}
 	if !tt.HasText("metrics unavailable") {
 		t.Fatalf("missing metrics card, texts %q", tt.Texts())
+	}
+}
+
+func TestSideHeaderSelectsContext(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = []string{"dev", "prod"}
+	a.current = "dev"
+	tt := ui.NewTester(a.view, 1100, 720)
+	if _, ok := tt.Find("dev"); !ok {
+		t.Fatalf("missing active context, texts %q", tt.Texts())
+	}
+}
+
+func TestSideHeaderNoList(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = nil
+	a.current = "dev"
+	tt := ui.NewTester(a.view, 1100, 720)
+	if _, ok := tt.Find("dev"); !ok {
+		t.Fatalf("missing active context, texts %q", tt.Texts())
 	}
 }
 
