@@ -2,6 +2,8 @@ package desktop
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -481,6 +483,77 @@ func TestCatalogPage(t *testing.T) {
 			t.Fatalf("missing %q, texts %q", want, tt.Texts())
 		}
 	}
+}
+
+func TestSwitchContextRefreshesList(t *testing.T) {
+	dir := t.TempDir()
+	kubeconfig := filepath.Join(dir, "config")
+	body := `
+apiVersion: v1
+kind: Config
+current-context: a
+contexts:
+- name: a
+  context:
+    cluster: c
+    user: u
+- name: b
+  context:
+    cluster: c
+    user: u
+clusters:
+- name: c
+  cluster:
+    server: https://127.0.0.1:6443
+users:
+- name: u
+  user:
+    token: test-token-not-for-logs
+`
+	if err := os.WriteFile(kubeconfig, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KUBECONFIG", kubeconfig)
+
+	s := cluster.NewSession()
+	a := New(s)
+	a.contexts = []string{"gone-1", "gone-2"}
+	a.current = "gone-1"
+	a.switchContext("b")
+	// switchContext runs Use on a goroutine; poll briefly for completion.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		a.mu.Lock()
+		cur := a.current
+		names := append([]string(nil), a.contexts...)
+		a.mu.Unlock()
+		if cur == "b" {
+			if len(names) == 0 {
+				t.Fatalf("context list left stale-empty after switch")
+			}
+			for _, gone := range []string{"gone-1", "gone-2"} {
+				for _, name := range names {
+					if name == gone {
+						t.Fatalf("stale context %q survived switch: %v", gone, names)
+					}
+				}
+			}
+			has := func(want string) bool {
+				for _, name := range names {
+					if name == want {
+						return true
+					}
+				}
+				return false
+			}
+			if !has("a") || !has("b") {
+				t.Fatalf("contexts not reloaded from session: %v", names)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("switch did not complete")
 }
 
 func TestSettingsPage(t *testing.T) {
