@@ -52,8 +52,8 @@ func TestPlaceKeepsTheRow(t *testing.T) {
 	if Place(0, "gone", keys) != -1 {
 		t.Fatal("hidden row stayed selected")
 	}
-	if Place(4, "", keys) != 0 {
-		t.Fatal("first open did not select a row")
+	if Place(4, "", keys) != -1 {
+		t.Fatal("unopened list selected a row")
 	}
 	if Place(0, "", nil) != -1 {
 		t.Fatal("empty list selected a row")

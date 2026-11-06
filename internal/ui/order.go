@@ -69,7 +69,7 @@ func CompareKnown(aOK, bOK bool, a, b float64, desc bool) int {
 
 // Place keeps a selection on key when rows are filtered. An unknown key
 // selects nothing, so a hidden row cannot be acted on. An empty key keeps
-// selected when it still points at a row, otherwise the first row.
+// selected only while it still points at a row.
 func Place(selected int, key string, keys []string) int {
 	if key != "" {
 		for i, item := range keys {
@@ -82,8 +82,5 @@ func Place(selected int, key string, keys []string) int {
 	if selected >= 0 && selected < len(keys) {
 		return selected
 	}
-	if len(keys) == 0 {
-		return -1
-	}
-	return 0
+	return -1
 }

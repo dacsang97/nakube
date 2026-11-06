@@ -28,6 +28,29 @@ func TestDrawShowsStatusRoleAndUnknownUsage(t *testing.T) {
 	}
 }
 
+func TestDetailOpensAfterRowClick(t *testing.T) {
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	node := readyNode("cp", now)
+	node.Status.NodeInfo.OSImage = "Test Linux"
+	page := Build([]*corev1.Node{node}, nil, "", All, ColName, false, now)
+	query := ""
+	filter := All
+	selected := -1
+	state := &ui.ListState{Selected: &selected}
+	tt := ui.NewTester(func(c *ui.Context) {
+		Draw(c, c.Theme(), page, &query, &filter, state, false, nil)
+	}, 1100, 700)
+	if tt.HasText("Test Linux") {
+		t.Fatal("detail drawer opened before a row click")
+	}
+	if err := tt.Click("cp"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("Test Linux") {
+		t.Fatalf("row click did not open detail drawer: %v", tt.Texts())
+	}
+}
+
 func TestDrawLoadingSkipsEmpty(t *testing.T) {
 	query := ""
 	filter := All
