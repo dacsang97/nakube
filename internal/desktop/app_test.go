@@ -609,13 +609,24 @@ users:
 	a.current = "dev"
 	a.router.Push("/pods")
 	tt := ui.NewTester(a.view, 1100, 720)
-	tt.Click("prod")
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && a.current != "prod" {
-		time.Sleep(10 * time.Millisecond)
+	if err := tt.Click("prod"); err != nil {
+		t.Fatal(err)
 	}
-	if a.current != "prod" {
-		t.Fatalf("context did not switch, current=%q", a.current)
+	deadline := time.Now().Add(2 * time.Second)
+	switched := false
+	for time.Now().Before(deadline) && !switched {
+		a.mu.Lock()
+		switched = a.current == "prod"
+		a.mu.Unlock()
+		if !switched {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	a.mu.Lock()
+	current := a.current
+	a.mu.Unlock()
+	if current != "prod" {
+		t.Fatalf("context did not switch, current=%q", current)
 	}
 	if got := a.router.Path(); got != "/pods" {
 		t.Fatalf("router moved to %q, want /pods", got)
