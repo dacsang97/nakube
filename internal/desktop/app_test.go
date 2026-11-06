@@ -574,7 +574,15 @@ users:
 }
 
 func TestContextRowClickOpensOverview(t *testing.T) {
-	a := New(cluster.NewSession())
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	// Point client-go at a missing file so clicking a context cannot read a
+	// real kubeconfig or write the real per-user state file.
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "missing", "config"))
+
+	s := cluster.NewSession()
+	s.SetStatePath(filepath.Join(dir, "state", "context"))
+	a := New(s)
 	a.contexts = []string{"dev", "prod"}
 	a.current = "dev"
 	a.router.Push("/pods")
