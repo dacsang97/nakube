@@ -573,6 +573,20 @@ users:
 	t.Fatal("switch did not complete")
 }
 
+func TestContextRowClickOpensOverview(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = []string{"dev", "prod"}
+	a.current = "dev"
+	a.router.Push("/pods")
+	tt := ui.NewTester(a.view, 1100, 720)
+	if err := tt.Click("prod"); err != nil {
+		t.Fatal(err)
+	}
+	if got := screenID(a.router.Path()); got != "overview" {
+		t.Fatalf("context row click landed on %q, want overview", got)
+	}
+}
+
 func TestSettingsPage(t *testing.T) {
 	a := New(cluster.NewSession())
 	a.router.Push("/settings")

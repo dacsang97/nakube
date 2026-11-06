@@ -305,6 +305,10 @@ func (a *App) contextRow(c *ui.Context, t *ui.Theme, name string, active bool) {
 		ui.Icon(c, IconNamed("server")).Size(16, 16).TextColor(icon).Shrink(0)
 		ui.Text(c, name).FontSize(13).SingleLine().MinWidth(0).Grow(1).Tooltip(name)
 	})
+	if !active && row.Clicked() {
+		a.switchContext(name)
+		a.openPage("overview")
+	}
 }
 
 // sideResize is the sidebar's right edge. A drag keeps the width for this
