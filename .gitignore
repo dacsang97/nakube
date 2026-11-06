@@ -13,3 +13,4 @@ DerivedData/
 
 .DS_Store
 /dist/
+ios/**/Build/

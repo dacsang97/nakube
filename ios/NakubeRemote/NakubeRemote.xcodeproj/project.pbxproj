@@ -143,8 +143,8 @@
 		A10000000000000000000052 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = DFNF4Y9RZX;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NakubeRemote/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NaKube;
@@ -164,8 +164,8 @@
 		A10000000000000000000053 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = DFNF4Y9RZX;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NakubeRemote/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NaKube;
