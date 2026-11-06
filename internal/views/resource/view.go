@@ -54,7 +54,7 @@ func Draw(c *ui.Context, t *ui.Theme, list List) {
 	}
 	row := list.Rows[*list.Selected]
 	inputs(c, row.Kind, list)
-	actions(c, *list.Selected, row.Kind, list.OnAction)
+	actions(c, t, *list.Selected, row.Kind, list.OnAction)
 	ui.Table(c, &ui.ListState{Selected: list.Selected}, columns(list.Columns), len(list.Rows), func(i, col int) {
 		ui.Text(c, list.Rows[i].Cells[col])
 	}).Fill()
@@ -74,15 +74,29 @@ func inputs(c *ui.Context, kind string, list List) {
 	}
 }
 
-func actions(c *ui.Context, index int, kind string, on func(int, string)) {
+func actions(c *ui.Context, t *ui.Theme, index int, kind string, on func(int, string)) {
+	Buttons(c, t, kind, func(action string) {
+		if on != nil {
+			on(index, action)
+		}
+	})
+}
+
+// Buttons paints the actions for a kind. The caller owns the selected row.
+// Delete is danger-colored so it is not a peer of the other actions.
+func Buttons(c *ui.Context, t *ui.Theme, kind string, on func(string)) {
 	names := Actions(kind)
 	if len(names) == 0 {
 		return
 	}
-	ui.Row(c).Gap(8).Children(func() {
+	ui.Row(c).Gap(6).Shrink(0).Children(func() {
 		for _, action := range names {
-			if ui.Button(c, actionLabel(action)).Clicked() && on != nil {
-				on(index, action)
+			b := ui.Button(c, actionLabel(action)).Shrink(0)
+			if action == "delete" && t != nil {
+				b.TextColor(t.Danger)
+			}
+			if b.Clicked() && on != nil {
+				on(action)
 			}
 		}
 	})

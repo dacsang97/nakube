@@ -67,6 +67,7 @@ type App struct {
 
 	pods         map[string]*corev1.Pod
 	nodes        map[string]*corev1.Node
+	namespaces   map[string]*corev1.Namespace
 	events       map[string]*corev1.Event
 	usage        cluster.Usage
 	usageErr     error
@@ -137,6 +138,12 @@ type App struct {
 	listNotice    string
 	listCols      []string
 	listRows      []listRow
+	listQuery     string
+	listFilter    int
+	listSort      ui.SortOrder
+	listColumns   ui.TableLayout
+	listKey       string
+	listState     ui.ListState
 	catalogLoaded bool
 	catalogSynced time.Time
 	catalogPins   []string
@@ -165,6 +172,7 @@ func New(session *cluster.Session) *App {
 		appearance:     DefaultAppearance(),
 		pods:           map[string]*corev1.Pod{},
 		nodes:          map[string]*corev1.Node{},
+		namespaces:     map[string]*corev1.Namespace{},
 		events:         map[string]*corev1.Event{},
 		scaleTo:        "1",
 		forwardLocal:   "8080",
@@ -255,6 +263,7 @@ func (a *App) startWatch(ctx context.Context) {
 	a.watchCancel = cancel
 	a.pods = map[string]*corev1.Pod{}
 	a.nodes = map[string]*corev1.Node{}
+	a.namespaces = map[string]*corev1.Namespace{}
 	a.events = map[string]*corev1.Event{}
 	a.samples = nil
 	a.usage = cluster.Usage{}
@@ -338,6 +347,17 @@ func (a *App) fold(ev cluster.WatchEvent) {
 		}
 		if node, ok := ev.Object.(*corev1.Node); ok {
 			a.nodes[key] = node.DeepCopy()
+		}
+	case "Namespace":
+		if a.namespaces == nil {
+			a.namespaces = map[string]*corev1.Namespace{}
+		}
+		if ev.Type == "delete" {
+			delete(a.namespaces, key)
+			return
+		}
+		if item, ok := ev.Object.(*corev1.Namespace); ok {
+			a.namespaces[key] = item.DeepCopy()
 		}
 	case "Event":
 		if ev.Type == "delete" {
@@ -457,6 +477,10 @@ func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, 
 	case r.Match("/{id}"):
 		id := r.Param("id")
 		r.Title(labelFor(id))
+		if inspectScreen(id) {
+			a.drawInspect(c, t, id)
+			break
+		}
 		a.mu.Lock()
 		list := a.snapshotLocked(id)
 		if a.errText == "" {
@@ -482,6 +506,8 @@ func (a *App) kindReady(kind string) bool {
 		return len(a.pods) > 0
 	case "Node":
 		return len(a.nodes) > 0
+	case "Namespace":
+		return len(a.namespaces) > 0
 	case "Event":
 		return len(a.events) > 0
 	default:
@@ -495,7 +521,7 @@ func (a *App) settleWatch(ctx context.Context) {
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		if a.session.KindSynced("Pod") && a.session.KindSynced("Node") && a.session.KindSynced("Event") {
+		if a.session.KindSynced("Pod") && a.session.KindSynced("Node") && a.session.KindSynced("Namespace") && a.session.KindSynced("Event") {
 			a.markListed()
 			return
 		}

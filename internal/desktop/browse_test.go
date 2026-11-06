@@ -54,6 +54,34 @@ func TestAskCapturesReplicas(t *testing.T) {
 	}
 }
 
+func TestClusterScreensStayLive(t *testing.T) {
+	for _, id := range []string{"nodes", "namespaces", "events"} {
+		if !isLive(id) || watchKind(id) == "" {
+			t.Fatalf("%s fell back to a fetched name list", id)
+		}
+	}
+}
+
+func TestFoldKeepsNamespacePhase(t *testing.T) {
+	a := New(nil)
+	a.fold(cluster.WatchEvent{
+		Type: "add",
+		Kind: "Namespace",
+		Object: &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: "team", Labels: map[string]string{"app": "shop"}},
+			Status:     corev1.NamespaceStatus{Phase: corev1.NamespaceActive},
+		},
+	})
+	got := a.namespaces["team"]
+	if got == nil || got.Status.Phase != corev1.NamespaceActive || got.Labels["app"] != "shop" {
+		t.Fatalf("%+v", got)
+	}
+	a.fold(cluster.WatchEvent{Type: "delete", Kind: "Namespace", Object: got})
+	if _, ok := a.namespaces["team"]; ok {
+		t.Fatal("deleted namespace stayed in the watch")
+	}
+}
+
 func hasAction(actions []string, want string) bool {
 	for _, action := range actions {
 		if action == want {

@@ -14,6 +14,7 @@ import (
 var WatchedKinds = []string{
 	"Pod",
 	"Node",
+	"Namespace",
 	"Event",
 	"Deployment",
 	"ReplicaSet",
@@ -87,6 +88,7 @@ func (s *Session) bindInformers(factory informers.SharedInformerFactory, gen uin
 	}{
 		{core.Pods().Informer(), "Pod"},
 		{core.Nodes().Informer(), "Node"},
+		{core.Namespaces().Informer(), "Namespace"},
 		{core.Events().Informer(), "Event"},
 		{apps.Deployments().Informer(), "Deployment"},
 		{apps.ReplicaSets().Informer(), "ReplicaSet"},
