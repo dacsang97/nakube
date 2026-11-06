@@ -516,6 +516,9 @@ users:
 	t.Setenv("KUBECONFIG", kubeconfig)
 
 	s := cluster.NewSession()
+	// Keep Use from writing the picked context into the real per-user state
+	// file; the app reads that file at startup.
+	s.SetStatePath(filepath.Join(dir, "state", "context"))
 	a := New(s)
 	a.contexts = []string{"gone-1", "gone-2"}
 	a.current = "gone-1"
