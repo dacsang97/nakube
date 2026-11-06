@@ -201,22 +201,22 @@ func (a *App) pinButton(c *ui.Context, t *ui.Theme, name string, active bool) {
 	})
 }
 
-func (a *App) drawContextHeader(c *ui.Context, t *ui.Theme) {
-	if a.current == "" {
+func (a *App) drawContextHeader(c *ui.Context, t *ui.Theme, current string) {
+	if current == "" {
 		ui.Text(c, "No context").FontSize(13).FontWeight(650).TextColor(t.TextMuted).SingleLine()
 		return
 	}
-	ui.Text(c, a.current).FontSize(13).FontWeight(650).SingleLine().Tooltip(a.current)
+	ui.Text(c, current).FontSize(13).FontWeight(650).SingleLine().Tooltip(current)
 }
 
-func (a *App) drawSide(c *ui.Context, t *ui.Theme) {
+func (a *App) drawSide(c *ui.Context, t *ui.Theme, current string) {
 	page := ""
 	if a.router != nil {
 		page = screenID(a.router.Path())
 	}
 	ui.Column(c).Width(a.sideWidth()).Shrink(0).FillHeight().Background(t.Surface).Children(func() {
 		ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 12).AlignItems(ui.Center).Background(tabInactive(t)).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Label("Sidebar header").Children(func() {
-			a.drawContextHeader(c, t)
+			a.drawContextHeader(c, t, current)
 		})
 		ui.Column(c).Shrink(0).Padding(8, 8, 4, 8).Children(func() {
 			ui.TextInput(c, &a.menuQuery).Placeholder("Search").Grow(1)
@@ -226,7 +226,7 @@ func (a *App) drawSide(c *ui.Context, t *ui.Theme) {
 				if len(a.contexts) > 0 {
 					ui.Text(c, "CONTEXTS").FontSize(11).FontWeight(600).TextColor(t.TextMuted).Padding(8, 8, 2, 8)
 					for _, name := range a.contexts {
-						a.contextRow(c, t, name, name == a.current)
+						a.contextRow(c, t, name, name == current)
 					}
 				}
 				shown := 0

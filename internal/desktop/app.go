@@ -464,7 +464,7 @@ func (a *App) view(c *ui.Context) {
 	shell.Children(func() {
 		ui.Row(c).Shrink(0).FillHeight().Radius(shellRadius).Clip().Background(t.Surface).Border(1, t.Border).Children(func() {
 			a.drawActivityBar(c, t, current)
-			a.drawSide(c, t)
+			a.drawSide(c, t, current)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Label("Main content panel").Children(func() {
 			a.drawTabs(c, t)
