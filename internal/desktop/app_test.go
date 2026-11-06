@@ -2,6 +2,8 @@ package desktop
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -425,11 +427,37 @@ func TestEmptyContextView(t *testing.T) {
 	if !tt.HasText("no kube context is configured") {
 		t.Fatalf("texts %q", tt.Texts())
 	}
-	if !tt.HasText("NaKube") || !tt.HasText("Overview") || !tt.HasText("Workloads") || !tt.HasText("Pods") {
+	if _, ok := tt.Find("NaKube"); ok {
+		t.Fatalf("sidebar header still static title, texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("No context"); !ok {
+		t.Fatalf("missing No context header, texts %q", tt.Texts())
+	}
+	if !tt.HasText("Overview") || !tt.HasText("Workloads") || !tt.HasText("Pods") {
 		t.Fatalf("missing menu, texts %q", tt.Texts())
 	}
 	if !tt.HasText("metrics unavailable") {
 		t.Fatalf("missing metrics card, texts %q", tt.Texts())
+	}
+}
+
+func TestSideHeaderSelectsContext(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = []string{"dev", "prod"}
+	a.current = "dev"
+	tt := ui.NewTester(a.view, 1100, 720)
+	if _, ok := tt.Find("dev"); !ok {
+		t.Fatalf("missing active context, texts %q", tt.Texts())
+	}
+}
+
+func TestSideHeaderNoList(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = nil
+	a.current = "dev"
+	tt := ui.NewTester(a.view, 1100, 720)
+	if _, ok := tt.Find("dev"); !ok {
+		t.Fatalf("missing active context, texts %q", tt.Texts())
 	}
 }
 
@@ -455,6 +483,80 @@ func TestCatalogPage(t *testing.T) {
 			t.Fatalf("missing %q, texts %q", want, tt.Texts())
 		}
 	}
+}
+
+func TestSwitchContextRefreshesList(t *testing.T) {
+	dir := t.TempDir()
+	kubeconfig := filepath.Join(dir, "config")
+	body := `
+apiVersion: v1
+kind: Config
+current-context: a
+contexts:
+- name: a
+  context:
+    cluster: c
+    user: u
+- name: b
+  context:
+    cluster: c
+    user: u
+clusters:
+- name: c
+  cluster:
+    server: https://127.0.0.1:6443
+users:
+- name: u
+  user:
+    token: test-token-not-for-logs
+`
+	if err := os.WriteFile(kubeconfig, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KUBECONFIG", kubeconfig)
+
+	s := cluster.NewSession()
+	// Keep Use from writing the picked context into the real per-user state
+	// file; the app reads that file at startup.
+	s.SetStatePath(filepath.Join(dir, "state", "context"))
+	a := New(s)
+	a.contexts = []string{"gone-1", "gone-2"}
+	a.current = "gone-1"
+	a.switchContext("b")
+	// switchContext runs Use on a goroutine; poll briefly for completion.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		a.mu.Lock()
+		cur := a.current
+		names := append([]string(nil), a.contexts...)
+		a.mu.Unlock()
+		if cur == "b" {
+			if len(names) == 0 {
+				t.Fatalf("context list left stale-empty after switch")
+			}
+			for _, gone := range []string{"gone-1", "gone-2"} {
+				for _, name := range names {
+					if name == gone {
+						t.Fatalf("stale context %q survived switch: %v", gone, names)
+					}
+				}
+			}
+			has := func(want string) bool {
+				for _, name := range names {
+					if name == want {
+						return true
+					}
+				}
+				return false
+			}
+			if !has("a") || !has("b") {
+				t.Fatalf("contexts not reloaded from session: %v", names)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("switch did not complete")
 }
 
 func TestSettingsPage(t *testing.T) {

@@ -429,6 +429,7 @@ func (a *App) switchContext(name string) {
 		a.current = name
 		a.errText = ""
 		a.mu.Unlock()
+		a.loadContexts()
 		a.startWatch(context.Background())
 		a.refreshMetrics(context.Background())
 		a.loadList(a.Selected())
