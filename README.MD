@@ -21,6 +21,8 @@ go test ./...
 
 Package tests need no cluster and no display. A missing kubeconfig is not a failure.
 
+The editor keeps one tab per screen. A sidebar click opens a preview tab and replaces the previous preview. A double click pins it. Dragging a tab reorders the strip and pins it. Logs, a shell, and YAML open as their own pinned tabs beside the list; opening the same object again focuses that tab. The tab menu closes that tab, the others, the tabs to the right, or all of them. Closing the last tab returns to Overview. On macOS, Command-W closes the tab, Command-Option-Left and Command-Option-Right switch tabs, and Command-1 through Command-8 choose a tab, Command-9 the last. Elsewhere those are Ctrl-W, Ctrl-PageDown, Ctrl-PageUp, and Ctrl-1 through Ctrl-9.
+
 ## Checks
 
 CI runs these on pull requests and on `main`. None of them package or publish the app.
@@ -57,7 +59,7 @@ Stdio only. The process reads the context file the desktop `Use` writes, or kube
 | `internal/cluster` | Kube client: watch, logs, exec, dry-run apply |
 | `internal/ui` | Reusable widgets. No Kubernetes types |
 | `internal/views` | One package per screen. Screens do not import each other |
-| `internal/desktop` | Window shell: sidebar, router, session state |
+| `internal/desktop` | Window shell: sidebar, tab strip, router, session state |
 | `internal/mcp` | Stdio MCP handler |
 | `internal/remote` | Tailscale listener for the phone, port `47623` |
 

@@ -29,36 +29,67 @@ func (a *App) drawLogs(c *ui.Context, t *ui.Theme) {
 		Invalid: err != nil,
 		Loading: a.logLoading,
 		Lines:   lines,
-		OnBack:  a.leaveOverlay,
+		OnBack:  a.backFromOverlay,
 	})
 }
 
 func (a *App) openLogs(namespace, name, container string) {
+	a.openDetail("logs", "Pod", namespace, name, "Logs: "+name)
+	a.ensureTabs()
+	owner := a.active
 	if a.logCancel != nil {
 		a.logCancel()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	a.logCancel = cancel
-	a.logGen++
-	gen := a.logGen
-	a.mode = "logs"
-	a.logLines = nil
-	a.logLoading = true
-	a.logFollow = true
-	a.logPod = name
+	a.mu.Lock()
+	b := a.bodies[owner]
+	if b == nil {
+		b = newTabBody()
+		a.bodies[owner] = b
+	}
+	b.logCancel = cancel
+	b.logGen++
+	gen := b.logGen
+	b.mode = "logs"
+	b.logLines = nil
+	b.logLoading = true
+	b.logFollow = true
+	b.logPod = name
+	if a.active == owner {
+		a.logCancel = cancel
+		a.logGen = gen
+		a.mode = "logs"
+		a.logLines = nil
+		a.logLoading = true
+		a.logFollow = true
+		a.logPod = name
+	}
+	a.mu.Unlock()
 	go func() {
 		err := a.session.StreamLogs(ctx, namespace, name, container, true, 200, func(lines []string) {
 			a.mu.Lock()
-			a.logLoading = false
+			b := a.bodies[owner]
+			if b == nil || b.logGen != gen {
+				a.mu.Unlock()
+				return
+			}
+			b.logLoading = false
 			for _, line := range lines {
-				a.logLines = append(a.logLines, LogLine{Pod: name, Text: line})
+				b.logLines = append(b.logLines, LogLine{Pod: name, Text: line})
+			}
+			if a.active == owner {
+				a.logLines = b.logLines
+				a.logLoading = false
 			}
 			a.mu.Unlock()
 			a.invalidate()
 		})
 		a.mu.Lock()
-		if a.logGen == gen {
-			a.logLoading = false
+		if b := a.bodies[owner]; b != nil && b.logGen == gen {
+			b.logLoading = false
+			if a.active == owner {
+				a.logLoading = false
+			}
 		}
 		a.mu.Unlock()
 		a.invalidate()
@@ -69,43 +100,68 @@ func (a *App) openLogs(namespace, name, container string) {
 }
 
 func (a *App) drawExec(c *ui.Context, t *ui.Theme) {
-	term.Draw(c, t, term.Page{Err: a.execErr, Term: a.execTerm, OnBack: a.closeExec})
+	term.Draw(c, t, term.Page{Err: a.execErr, Term: a.execTerm, OnBack: a.backFromExec})
 }
 
 func (a *App) openExec(namespace, name, container string) {
+	a.openDetail("exec", "Pod", namespace, name, "Shell: "+name)
 	a.closeExec()
-	a.mode = "exec"
-	a.execErr = ""
+	a.ensureTabs()
+	owner := a.active
+	a.mu.Lock()
+	b := a.bodies[owner]
+	if b == nil {
+		b = newTabBody()
+		a.bodies[owner] = b
+	}
+	b.mode = "exec"
+	b.execErr = ""
+	if a.active == owner {
+		a.mode = "exec"
+		a.execErr = ""
+	}
+	a.mu.Unlock()
 	go func() {
 		conn, err := a.session.Exec(context.Background(), namespace, name, container, []string{"/bin/sh"})
 		if err != nil {
-			a.mu.Lock()
-			a.execErr = publicError(err)
-			a.mu.Unlock()
-			a.invalidate()
+			a.noteExecErr(owner, publicError(err))
 			return
 		}
 		term, err := terminal.New(terminal.Options{Conn: conn})
 		if err != nil {
 			_ = conn.Close()
-			a.mu.Lock()
-			a.execErr = publicError(err)
-			a.mu.Unlock()
-			a.invalidate()
+			a.noteExecErr(owner, publicError(err))
 			return
 		}
 		a.mu.Lock()
-		if a.mode != "exec" {
+		b := a.bodies[owner]
+		if b == nil || b.mode != "exec" {
 			a.mu.Unlock()
 			term.Close()
 			_ = conn.Close()
 			return
 		}
-		a.execConn = conn
-		a.execTerm = term
+		b.execConn = conn
+		b.execTerm = term
+		if a.active == owner {
+			a.execConn = conn
+			a.execTerm = term
+		}
 		a.mu.Unlock()
 		a.invalidate()
 	}()
+}
+
+func (a *App) noteExecErr(owner, msg string) {
+	a.mu.Lock()
+	if b := a.bodies[owner]; b != nil {
+		b.execErr = msg
+	}
+	if a.active == owner {
+		a.execErr = msg
+	}
+	a.mu.Unlock()
+	a.invalidate()
 }
 
 func (a *App) closeExec() {
@@ -120,13 +176,11 @@ func (a *App) closeExec() {
 	if a.mode == "exec" {
 		a.mode = ""
 	}
+	a.stash()
 }
 
 func (a *App) drawYAML(c *ui.Context, t *ui.Theme) {
-	page := manifest.Page{OnBack: func() {
-		a.mode = ""
-		a.yaml = nil
-	}, OnDryRun: a.dryRunYAML}
+	page := manifest.Page{OnBack: a.backFromYAML, OnDryRun: a.dryRunYAML}
 	if a.yaml != nil {
 		page.Err = a.yaml.Err
 		page.Kind = a.yaml.Identity.Kind
@@ -155,17 +209,28 @@ func (a *App) drawYAML(c *ui.Context, t *ui.Theme) {
 }
 
 func (a *App) openYAML(id cluster.Identity) {
+	title := id.Name + ".yaml"
+	if id.Name == "" {
+		title = "YAML"
+	}
+	a.openDetail("yaml", id.Kind, id.Namespace, id.Name, title)
+	a.ensureTabs()
+	owner := a.active
+	screen := &yamlScreen{Identity: id}
 	a.mode = "yaml"
-	a.yaml = &yamlScreen{Identity: id}
+	a.yaml = screen
+	a.stash()
 	reveal := a.secretReveal
 	go func() {
 		body, err := a.session.GetYAML(context.Background(), id)
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		b := a.bodies[owner]
+		if b == nil || b.yaml != screen {
+			return
+		}
 		if err != nil {
-			a.mu.Lock()
-			if a.yaml != nil {
-				a.yaml.Err = publicError(err)
-			}
-			a.mu.Unlock()
+			screen.Err = publicError(err)
 			a.invalidate()
 			return
 		}
@@ -174,12 +239,8 @@ func (a *App) openYAML(id cluster.Identity) {
 		}
 		buf := editor.NewBuffer(body)
 		buf.SetLanguage(editor.LanguageFor("resource.yaml"))
-		a.mu.Lock()
-		if a.yaml != nil && a.yaml.Identity == id {
-			a.yaml.State = &editor.State{Buffer: buf}
-			a.yaml.Err = ""
-		}
-		a.mu.Unlock()
+		screen.State = &editor.State{Buffer: buf}
+		screen.Err = ""
 		a.invalidate()
 	}()
 }
@@ -188,30 +249,33 @@ func (a *App) dryRunYAML() {
 	if a.yaml == nil || a.yaml.State == nil || a.yaml.State.Buffer == nil {
 		return
 	}
-	body := a.yaml.State.Buffer.String()
-	a.yaml.Pending = true
-	a.yaml.Diff = nil
+	owner := a.active
+	screen := a.yaml
+	body := screen.State.Buffer.String()
+	screen.Pending = true
+	screen.Diff = nil
 	a.invalidate()
 	go func() {
 		preview, err := a.session.DryRunApply(context.Background(), body)
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		if a.yaml == nil {
+		b := a.bodies[owner]
+		if b == nil || b.yaml != screen {
 			return
 		}
-		a.yaml.Pending = false
+		screen.Pending = false
 		if err != nil {
-			a.yaml.Err = publicError(err)
+			screen.Err = publicError(err)
 			a.invalidate()
 			return
 		}
-		a.yaml.Confirm = OpenYAML(preview, body)
+		screen.Confirm = OpenYAML(preview, body)
 		old, newBuf := editor.NewBuffer(preview.Live), editor.NewBuffer(preview.Predicted)
 		lang := editor.LanguageFor("resource.yaml")
 		old.SetLanguage(lang)
 		newBuf.SetLanguage(lang)
-		a.yaml.Diff = &editor.DiffState{Old: old, New: newBuf}
-		a.yaml.Err = ""
+		screen.Diff = &editor.DiffState{Old: old, New: newBuf}
+		screen.Err = ""
 		a.invalidate()
 	}()
 }
@@ -239,10 +303,12 @@ func (a *App) drawHelm(c *ui.Context, t *ui.Theme) {
 			a.helmDry = false
 			a.helmDiff = nil
 			a.helmBusy = false
+			a.stash()
 		},
 		OnInstall: func() {
 			a.runHelm(false)
 			a.helmDry = false
+			a.stash()
 		},
 	})
 }
@@ -260,22 +326,31 @@ func (a *App) runHelm(dry bool) {
 	if !dry && !a.helmDry {
 		return
 	}
+	a.ensureTabs()
+	owner := a.active
 	a.helmBusy = true
+	a.stash()
 	a.invalidate()
 	go func() {
 		res, err := a.session.HelmInstall(context.Background(), req)
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		a.helmBusy = false
-		if err != nil {
-			a.helmErr = publicError(err)
-			a.invalidate()
+		b := a.bodies[owner]
+		if b == nil {
 			return
 		}
-		a.helmErr = ""
-		if dry && res != nil {
+		b.helmBusy = false
+		b.helmErr = ""
+		if err != nil {
+			b.helmErr = publicError(err)
+		} else if dry && res != nil {
 			old, newBuf := editor.NewBuffer(""), editor.NewBuffer(res.Manifest)
-			a.helmDiff = &editor.DiffState{Old: old, New: newBuf}
+			b.helmDiff = &editor.DiffState{Old: old, New: newBuf}
+		}
+		if a.active == owner {
+			a.helmBusy = b.helmBusy
+			a.helmErr = b.helmErr
+			a.helmDiff = b.helmDiff
 		}
 		a.invalidate()
 	}()
