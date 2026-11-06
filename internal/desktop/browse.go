@@ -11,10 +11,12 @@ import (
 	"github.com/egoist/mygo/ui"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/dacsang97/nakube/internal/cluster"
 	"github.com/dacsang97/nakube/internal/views/resource"
+	"github.com/dacsang97/nakube/internal/views/workloads"
 )
 
 // listRow is one table row. Actions use Identity, captured when the row was built.
@@ -24,6 +26,19 @@ type listRow struct {
 	Name      string
 	Identity  cluster.Identity
 	Forward   *cluster.Forward
+}
+
+func (a *App) panelResourceActions(row listRow) (func(), func()) {
+	editAction, removeAction := resource.HeaderActions(row.Identity.Kind)
+	action := func(name string) func() {
+		if name == "" {
+			return nil
+		}
+		return func() {
+			a.runAction(row, name)
+		}
+	}
+	return action(editAction), action(removeAction)
 }
 
 type listSnap struct {
@@ -47,6 +62,10 @@ func (a *App) drawMain(c *ui.Context, t *ui.Theme, id string, snap listSnap) {
 		a.drawYAML(c, t)
 		return
 	}
+	if id == "workloads" {
+		a.drawWorkloads(c, t)
+		return
+	}
 	if id == "overview" || id == "" {
 		return
 	}
@@ -67,9 +86,9 @@ func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSna
 	}
 	rows := make([]resource.Row, len(snap.rows))
 	for i, row := range snap.rows {
-		rows[i] = resource.Row{Kind: row.Identity.Kind, Cells: row.Cells}
+		rows[i] = resource.Row{Kind: row.Identity.Kind, Name: row.Name, Cells: row.Cells}
 	}
-	resource.Draw(c, t, resource.List{
+	list := resource.List{
 		Title:    labelFor(selected),
 		Err:      snap.err,
 		Notice:   snap.notice,
@@ -88,7 +107,24 @@ func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSna
 			}
 			a.runAction(snap.rows[index], action)
 		},
-	})
+	}
+	selection := resource.Draw(c, t, list)
+	if selection.Valid {
+		row := snap.rows[selection.Index]
+		onEdit, onRemove := a.panelResourceActions(row)
+		a.offerDetailPanel(selection.Changed, true, shellDetailPanel{
+			title:    row.Identity.Kind + ": " + row.Name,
+			label:    row.Identity.Kind + " details panel",
+			copyText: row.Name,
+			onEdit:   onEdit,
+			onRemove: onRemove,
+			draw: func(c *ui.Context, t *ui.Theme) {
+				resource.Detail(c, t, list, selection.Index)
+			},
+		})
+	} else {
+		a.offerDetailPanel(selection.Changed, false, shellDetailPanel{})
+	}
 }
 
 func emptyText(id string) string {
@@ -413,7 +449,7 @@ func (a *App) snapshotLocked(id string) listSnap {
 func (a *App) liveRowsLocked(id string) ([]string, []listRow) {
 	switch id {
 	case "workloads":
-		return workloadSummary(a.pods)
+		return nil, nil
 	case "pods":
 		return podTable(a.pods)
 	case "port-forwards":
@@ -499,6 +535,8 @@ type namedKind struct {
 
 func workloadKind(id string) namedKind {
 	switch id {
+	case "pods":
+		return namedKind{"Pod", schema.GroupVersionResource{Version: "v1", Resource: "pods"}}
 	case "deployments":
 		return namedKind{"Deployment", schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}}
 	case "replicasets":
@@ -560,29 +598,64 @@ func helmRows(rels []cluster.HelmRelease) ([]string, []listRow, string, error) {
 	return cols, out, "", nil
 }
 
-func workloadSummary(pods map[string]*corev1.Pod) ([]string, []listRow) {
-	var running, pending, failed, other int
-	for _, pod := range pods {
-		if pod == nil {
-			continue
-		}
-		switch pod.Status.Phase {
-		case corev1.PodRunning:
-			running++
-		case corev1.PodPending:
-			pending++
-		case corev1.PodFailed:
-			failed++
-		default:
-			other++
+func (a *App) drawWorkloads(c *ui.Context, t *ui.Theme) {
+	a.mu.Lock()
+	objects := workloadSlice(a.workloadObjects)
+	loading := a.errText == "" && !a.workloadsReadyLocked() && len(objects) == 0
+	contextName := a.current
+	a.mu.Unlock()
+
+	a.prepareInspect("workloads")
+	page := workloads.Build(objects, a.listQuery, a.listFilter, a.listSort.Column, a.listSort.Descending)
+	keys := make([]string, len(page.Rows))
+	for i, row := range page.Rows {
+		keys[i] = row.Key
+	}
+	a.bindList(keys)
+	selection := workloads.Draw(c, t, page, contextName, &a.listQuery, &a.listFilter, &a.listState, loading, time.Now(), a.openPage)
+	item := selection.Row
+	kind := workloadKind(item.KindID)
+	row := listRow{
+		Namespace: item.Namespace,
+		Name:      item.Name,
+		Identity: cluster.Identity{
+			GVR:       kind.GVR,
+			Kind:      item.Kind,
+			Namespace: item.Namespace,
+			Name:      item.Name,
+		},
+	}
+	onEdit, onRemove := a.panelResourceActions(row)
+	a.offerDetailPanel(selection.Changed, selection.Valid, shellDetailPanel{
+		title:    item.Kind + ": " + item.Name,
+		label:    "Workload details panel",
+		copyText: item.Name,
+		onEdit:   onEdit,
+		onRemove: onRemove,
+		draw: func(c *ui.Context, t *ui.Theme) {
+			workloads.Detail(c, t, item, time.Now())
+		},
+	})
+	a.finishInspect(keys)
+}
+
+func (a *App) workloadsReadyLocked() bool {
+	for _, kind := range []string{"Pod", "Deployment", "ReplicaSet", "DaemonSet", "StatefulSet", "Job", "CronJob"} {
+		if !a.kindReady(kind) {
+			return false
 		}
 	}
-	return []string{"Phase", "Pods"}, []listRow{
-		{Cells: []string{"Running", strconv.Itoa(running)}},
-		{Cells: []string{"Pending", strconv.Itoa(pending)}},
-		{Cells: []string{"Failed", strconv.Itoa(failed)}},
-		{Cells: []string{"Other", strconv.Itoa(other)}},
+	return true
+}
+
+func workloadSlice(items map[string]runtime.Object) []runtime.Object {
+	out := make([]runtime.Object, 0, len(items))
+	for _, item := range items {
+		if item != nil {
+			out = append(out, item)
+		}
 	}
+	return out
 }
 
 func podTable(pods map[string]*corev1.Pod) ([]string, []listRow) {

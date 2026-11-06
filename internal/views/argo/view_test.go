@@ -108,10 +108,35 @@ func TestDrawApplicationDetail(t *testing.T) {
 	}
 }
 
+func TestDetailHeaderActionsMatchSupportedResources(t *testing.T) {
+	page := Page{
+		ID:       "argo-applications",
+		OnAction: func(int, string) {},
+		Apps:     []App{{Namespace: "argo", Name: "shop"}},
+	}
+	edit, remove := HeaderActions(page, 0)
+	if edit != "yaml" || remove != "delete" {
+		t.Fatalf("application header actions = %q, %q", edit, remove)
+	}
+	page.ID = "argo-repositories"
+	page.Repos = []Repo{{Name: "origin"}}
+	if edit, remove = HeaderActions(page, 0); edit != "" || remove != "" {
+		t.Fatalf("repository header actions = %q, %q", edit, remove)
+	}
+	page.ID = "argo-applications"
+	page.OnAction = nil
+	if edit, remove = HeaderActions(page, 0); edit != "" || remove != "" {
+		t.Fatalf("disabled header actions = %q, %q", edit, remove)
+	}
+}
+
 func frame(t *testing.T, page Page) []string {
 	t.Helper()
 	tt := ui.NewTester(func(c *ui.Context) {
-		Draw(c, c.Theme(), page)
+		selection := Draw(c, c.Theme(), page)
+		if selection.Valid {
+			Detail(c, c.Theme(), page, selection.Index)
+		}
 	}, 1280, 980)
 	return tt.Texts()
 }

@@ -7,6 +7,8 @@ import (
 	"github.com/egoist/mygo/ui"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+
+	kit "github.com/dacsang97/nakube/internal/ui"
 )
 
 func TestDrawShowsStatusRoleAndUnknownUsage(t *testing.T) {
@@ -19,7 +21,7 @@ func TestDrawShowsStatusRoleAndUnknownUsage(t *testing.T) {
 	filter := All
 	selected := 0
 	tt := ui.NewTester(func(c *ui.Context) {
-		Draw(c, c.Theme(), page, &query, &filter, &ui.ListState{Selected: &selected}, false, nil)
+		Draw(c, c.Theme(), page, &query, &filter, &ui.ListState{Selected: &selected}, false)
 	}, 1100, 700)
 	for _, want := range []string{"Nodes", "cp", "Ready", "control-plane", "CPU", "—"} {
 		if !tt.HasText(want) {
@@ -28,26 +30,22 @@ func TestDrawShowsStatusRoleAndUnknownUsage(t *testing.T) {
 	}
 }
 
-func TestDetailOpensAfterRowClick(t *testing.T) {
+func TestRowClickChangesSelection(t *testing.T) {
 	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
-	node := readyNode("cp", now)
-	node.Status.NodeInfo.OSImage = "Test Linux"
-	page := Build([]*corev1.Node{node}, nil, "", All, ColName, false, now)
+	page := Build([]*corev1.Node{readyNode("cp", now)}, nil, "", All, ColName, false, now)
 	query := ""
 	filter := All
 	selected := -1
 	state := &ui.ListState{Selected: &selected}
+	var selection kit.Selection
 	tt := ui.NewTester(func(c *ui.Context) {
-		Draw(c, c.Theme(), page, &query, &filter, state, false, nil)
+		selection = Draw(c, c.Theme(), page, &query, &filter, state, false)
 	}, 1100, 700)
-	if tt.HasText("Test Linux") {
-		t.Fatal("detail drawer opened before a row click")
-	}
 	if err := tt.Click("cp"); err != nil {
 		t.Fatal(err)
 	}
-	if !tt.HasText("Test Linux") {
-		t.Fatalf("row click did not open detail drawer: %v", tt.Texts())
+	if !selection.Valid || selected != 0 {
+		t.Fatalf("row selection not reported: %+v selected %d", selection, selected)
 	}
 }
 
@@ -55,7 +53,7 @@ func TestDrawLoadingSkipsEmpty(t *testing.T) {
 	query := ""
 	filter := All
 	tt := ui.NewTester(func(c *ui.Context) {
-		Draw(c, c.Theme(), Page{}, &query, &filter, &ui.ListState{}, true, nil)
+		Draw(c, c.Theme(), Page{}, &query, &filter, &ui.ListState{}, true)
 	}, 800, 600)
 	if tt.HasText("None") || !tt.HasText("Nodes") || !tt.HasText("Status") {
 		t.Fatalf("loading %v", tt.Texts())

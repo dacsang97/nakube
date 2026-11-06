@@ -331,7 +331,7 @@ func (a *App) tabKeys(e ui.Element) {
 
 func (a *App) drawTabs(c *ui.Context, t *ui.Theme) {
 	a.ensureTabs()
-	ui.Row(c).Height(tabStripH).FillWidth().Shrink(0).Background(tabInactive(t)).Children(func() {
+	ui.Row(c).Height(tabStripH).FillWidth().Shrink(0).Background(tabInactive(t)).Label("Main header").Children(func() {
 		ui.ScrollHorizontal(c).FillWidth().FillHeight().Children(func() {
 			ui.Row(c).FillHeight().Gap(shoulder).Children(func() {
 				vis := a.tabs.Visible()

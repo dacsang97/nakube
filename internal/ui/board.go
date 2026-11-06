@@ -11,9 +11,16 @@ type Column struct {
 	Align           ui.Align
 }
 
-// Board is a searchable list and the facts of the selected row. Screens
-// fill it; this package does not know what a row means. A nil Query hides
-// the field. A nil Filter, or no Filters, hides the switch.
+// Selection reports the current table row and whether this frame changed it.
+type Selection struct {
+	Index   int
+	Valid   bool
+	Changed bool
+}
+
+// Board is a searchable resource list. Screens own row semantics and render
+// selected details in the shell panel. A nil Query hides the field. A nil
+// Filter, or no Filters, hides the switch.
 type Board struct {
 	Title   string
 	Count   string
@@ -29,11 +36,11 @@ type Board struct {
 	Rows    int
 	State   *ui.ListState
 	Cell    func(c *ui.Context, row, col int)
-	Detail  func(c *ui.Context)
 }
 
 // DrawBoard paints a board. It does not load, search, or sort the rows.
-func DrawBoard(c *ui.Context, t *ui.Theme, b Board) {
+func DrawBoard(c *ui.Context, t *ui.Theme, b Board) Selection {
+	changed := false
 	ui.Column(c).Grow(1).MinWidth(0).MinHeight(0).Gap(12).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Baseline).Children(func() {
 			ui.Text(c, b.Title).FontSize(22).Bold()
@@ -58,9 +65,11 @@ func DrawBoard(c *ui.Context, t *ui.Theme, b Board) {
 			ui.Text(c, text).TextColor(t.TextMuted)
 		default:
 			note(c, t, b)
-			boardBody(c, t, b)
+			changed = boardBody(c, b)
 		}
 	})
+	index := selectedRow(b)
+	return Selection{Index: index, Valid: index >= 0, Changed: changed}
 }
 
 func toolbar(c *ui.Context, b Board) {
@@ -87,22 +96,12 @@ func note(c *ui.Context, t *ui.Theme, b Board) {
 	}
 }
 
-func boardBody(c *ui.Context, t *ui.Theme, b Board) {
-	ui.Row(c).Grow(1).MinWidth(0).MinHeight(0).Gap(12).AlignItems(ui.Stretch).Children(func() {
-		ui.Table(c, b.State, tableColumns(b.Columns), b.Rows, func(row, col int) {
-			if b.Cell != nil {
-				b.Cell(c, row, col)
-			}
-		}).Grow(1).MinWidth(0).FillHeight()
-		if b.Detail == nil || selectedRow(b) < 0 {
-			return
+func boardBody(c *ui.Context, b Board) bool {
+	return ui.Table(c, b.State, tableColumns(b.Columns), b.Rows, func(row, col int) {
+		if b.Cell != nil {
+			b.Cell(c, row, col)
 		}
-		ui.Scroll(c).Width(300).Shrink(0).FillHeight().Children(func() {
-			Panel(c, t).FillWidth().Children(func() {
-				b.Detail(c)
-			})
-		})
-	})
+	}).Grow(1).MinWidth(0).FillHeight().Changed()
 }
 
 func selectedRow(b Board) int {

@@ -42,10 +42,11 @@ type Page struct {
 }
 
 // Draw paints the Argo dashboard or one designed list.
-func Draw(c *ui.Context, t *ui.Theme, page Page) {
+func Draw(c *ui.Context, t *ui.Theme, page Page) kit.Selection {
 	if page.Now.IsZero() {
 		page.Now = time.Now()
 	}
+	result := kit.Selection{Index: -1}
 	title := page.Title
 	if title == "" {
 		title = "Argo"
@@ -80,20 +81,21 @@ func Draw(c *ui.Context, t *ui.Theme, page Page) {
 			case "argo", "":
 				dashboard(c, t, page)
 			case "argo-applications":
-				applicationList(c, t, page)
+				result = applicationList(c, page)
 			case "argo-applicationsets":
-				setList(c, t, page)
+				result = setList(c, page)
 			case "argo-appprojects":
-				projectList(c, t, page)
+				result = projectList(c, page)
 			case "argo-repositories":
-				repoList(c, t, page)
+				result = repoList(c, page)
 			case "argo-clusters":
-				clusterList(c, t, page)
+				result = clusterList(c, page)
 			default:
 				ui.Text(c, "Not found")
 			}
 		})
 	})
+	return result
 }
 
 func header(c *ui.Context, t *ui.Theme, title string, page Page) {
@@ -186,6 +188,13 @@ func statCard(c *ui.Context, t *ui.Theme, title, value string, color ui.Color) {
 	kit.Panel(c, t).Grow(1).Children(func() {
 		kit.Title(c, t, nil, title, color)
 		ui.Text(c, value).FontSize(32).Bold()
+	})
+}
+
+func detailStat(c *ui.Context, t *ui.Theme, title, value string, color ui.Color) {
+	ui.Column(c).Grow(1).MinWidth(120).Padding(10, 12).Gap(3).Radius(8).Background(kit.Tint(t, color)).Children(func() {
+		ui.Text(c, title).FontSize(11).Bold().TextColor(color)
+		ui.Text(c, value).FontSize(14).Bold().SingleLine()
 	})
 }
 
@@ -285,28 +294,28 @@ func activityColor(t *ui.Theme, category string) ui.Color {
 	}
 }
 
-func applicationList(c *ui.Context, t *ui.Theme, page Page) {
+func applicationList(c *ui.Context, page Page) kit.Selection {
 	if len(page.Apps) == 0 {
-		ui.Text(c, "No applications").TextColor(t.TextMuted)
-		return
+		ui.Text(c, "No applications")
+		return kit.Selection{Index: -1}
 	}
-	index := clamp(page.Selected, len(page.Apps))
-	ui.Table(c, &ui.ListState{Selected: &index}, appColumns(), len(page.Apps), func(i, col int) {
+	index := selectedIndex(page.Selected, len(page.Apps))
+	table := ui.Table(c, &ui.ListState{Selected: &index}, appColumns(), len(page.Apps), func(i, col int) {
 		ui.Text(c, appCell(page.Apps[i], col))
 	})
 	if page.Selected != nil {
 		*page.Selected = index
 	}
-	detailApp(c, t, page, page.Apps[index], index)
+	return kit.Selection{Index: index, Valid: index >= 0, Changed: table.Changed()}
 }
 
-func setList(c *ui.Context, t *ui.Theme, page Page) {
+func setList(c *ui.Context, page Page) kit.Selection {
 	if len(page.Sets) == 0 {
-		ui.Text(c, "No application sets").TextColor(t.TextMuted)
-		return
+		ui.Text(c, "No application sets")
+		return kit.Selection{Index: -1}
 	}
-	index := clamp(page.Selected, len(page.Sets))
-	ui.Table(c, &ui.ListState{Selected: &index}, []ui.TableColumn{
+	index := selectedIndex(page.Selected, len(page.Sets))
+	table := ui.Table(c, &ui.ListState{Selected: &index}, []ui.TableColumn{
 		{Title: "Namespace", Width: 140},
 		{Title: "Name", Width: 180},
 		{Title: "Generators", Width: 180},
@@ -319,24 +328,16 @@ func setList(c *ui.Context, t *ui.Theme, page Page) {
 	if page.Selected != nil {
 		*page.Selected = index
 	}
-	item := page.Sets[index]
-	kit.Panel(c, t).Children(func() {
-		ui.Text(c, item.Namespace+"/"+item.Name).FontSize(18).Bold()
-		statLine(c, t, "Generators", orDash(item.Generators))
-		statLine(c, t, "Project", orDash(item.Project))
-		statLine(c, t, "Destination", orDash(item.Destination))
-		lines(c, t, "Conditions", item.Conditions)
-		actions(c, index, []string{"yaml", "delete"}, page.OnAction)
-	})
+	return kit.Selection{Index: index, Valid: index >= 0, Changed: table.Changed()}
 }
 
-func projectList(c *ui.Context, t *ui.Theme, page Page) {
+func projectList(c *ui.Context, page Page) kit.Selection {
 	if len(page.Projects) == 0 {
-		ui.Text(c, "No projects").TextColor(t.TextMuted)
-		return
+		ui.Text(c, "No projects")
+		return kit.Selection{Index: -1}
 	}
-	index := clamp(page.Selected, len(page.Projects))
-	ui.Table(c, &ui.ListState{Selected: &index}, []ui.TableColumn{
+	index := selectedIndex(page.Selected, len(page.Projects))
+	table := ui.Table(c, &ui.ListState{Selected: &index}, []ui.TableColumn{
 		{Title: "Namespace", Width: 140},
 		{Title: "Name", Width: 180},
 		{Title: "Description", Width: 220},
@@ -349,24 +350,16 @@ func projectList(c *ui.Context, t *ui.Theme, page Page) {
 	if page.Selected != nil {
 		*page.Selected = index
 	}
-	item := page.Projects[index]
-	kit.Panel(c, t).Children(func() {
-		ui.Text(c, item.Namespace+"/"+item.Name).FontSize(18).Bold()
-		statLine(c, t, "Description", orDash(item.Description))
-		lines(c, t, "Source repositories", item.SourceRepos)
-		lines(c, t, "Destinations", item.Destinations)
-		statLine(c, t, "Roles", itoa(item.Roles))
-		actions(c, index, []string{"yaml", "delete"}, page.OnAction)
-	})
+	return kit.Selection{Index: index, Valid: index >= 0, Changed: table.Changed()}
 }
 
-func repoList(c *ui.Context, t *ui.Theme, page Page) {
+func repoList(c *ui.Context, page Page) kit.Selection {
 	if len(page.Repos) == 0 {
-		ui.Text(c, "No repositories").TextColor(t.TextMuted)
-		return
+		ui.Text(c, "No repositories")
+		return kit.Selection{Index: -1}
 	}
-	index := clamp(page.Selected, len(page.Repos))
-	ui.Table(c, &ui.ListState{Selected: &index}, []ui.TableColumn{
+	index := selectedIndex(page.Selected, len(page.Repos))
+	table := ui.Table(c, &ui.ListState{Selected: &index}, []ui.TableColumn{
 		{Title: "Name", Width: 160},
 		{Title: "Type", Width: 90},
 		{Title: "URL", Width: 280},
@@ -379,23 +372,16 @@ func repoList(c *ui.Context, t *ui.Theme, page Page) {
 	if page.Selected != nil {
 		*page.Selected = index
 	}
-	item := page.Repos[index]
-	kit.Panel(c, t).Children(func() {
-		ui.Text(c, item.Name).FontSize(18).Bold()
-		statLine(c, t, "Type", orDash(item.Type))
-		statLine(c, t, "URL", orDash(item.URL))
-		statLine(c, t, "Project", orDash(item.Project))
-		ui.Text(c, "Credentials stay on the Secret.").TextColor(t.TextMuted)
-	})
+	return kit.Selection{Index: index, Valid: index >= 0, Changed: table.Changed()}
 }
 
-func clusterList(c *ui.Context, t *ui.Theme, page Page) {
+func clusterList(c *ui.Context, page Page) kit.Selection {
 	if len(page.Clusters) == 0 {
-		ui.Text(c, "No cluster secrets. The in-cluster destination has none.").TextColor(t.TextMuted)
-		return
+		ui.Text(c, "No cluster secrets. The in-cluster destination has none.")
+		return kit.Selection{Index: -1}
 	}
-	index := clamp(page.Selected, len(page.Clusters))
-	ui.Table(c, &ui.ListState{Selected: &index}, []ui.TableColumn{
+	index := selectedIndex(page.Selected, len(page.Clusters))
+	table := ui.Table(c, &ui.ListState{Selected: &index}, []ui.TableColumn{
 		{Title: "Name", Width: 180},
 		{Title: "Server", Width: 320},
 	}, len(page.Clusters), func(i, col int) {
@@ -406,51 +392,121 @@ func clusterList(c *ui.Context, t *ui.Theme, page Page) {
 	if page.Selected != nil {
 		*page.Selected = index
 	}
-	item := page.Clusters[index]
-	kit.Panel(c, t).Children(func() {
-		ui.Text(c, item.Name).FontSize(18).Bold()
-		statLine(c, t, "Server", orDash(item.Server))
-		ui.Text(c, "Credentials stay on the Secret.").TextColor(t.TextMuted)
-	})
+	return kit.Selection{Index: index, Valid: index >= 0, Changed: table.Changed()}
+}
+
+func DetailTitle(page Page, index int) string {
+	switch page.ID {
+	case "argo-applications":
+		if index >= 0 && index < len(page.Apps) {
+			return page.Apps[index].Namespace + "/" + page.Apps[index].Name
+		}
+	case "argo-applicationsets":
+		if index >= 0 && index < len(page.Sets) {
+			return page.Sets[index].Namespace + "/" + page.Sets[index].Name
+		}
+	case "argo-appprojects":
+		if index >= 0 && index < len(page.Projects) {
+			return page.Projects[index].Namespace + "/" + page.Projects[index].Name
+		}
+	case "argo-repositories":
+		if index >= 0 && index < len(page.Repos) {
+			return page.Repos[index].Name
+		}
+	case "argo-clusters":
+		if index >= 0 && index < len(page.Clusters) {
+			return page.Clusters[index].Name
+		}
+	}
+	return ""
+}
+
+// HeaderActions returns resource actions supported by the shared detail header.
+func HeaderActions(page Page, index int) (edit, remove string) {
+	if page.OnAction == nil || DetailTitle(page, index) == "" {
+		return "", ""
+	}
+	switch page.ID {
+	case "argo-applications", "argo-applicationsets", "argo-appprojects":
+		return "yaml", "delete"
+	default:
+		return "", ""
+	}
+}
+
+func Detail(c *ui.Context, t *ui.Theme, page Page, index int) {
+	switch page.ID {
+	case "argo-applications":
+		if index >= 0 && index < len(page.Apps) {
+			detailApp(c, t, page, page.Apps[index], index)
+		}
+	case "argo-applicationsets":
+		if index >= 0 && index < len(page.Sets) {
+			item := page.Sets[index]
+			statLine(c, t, "Generators", orDash(item.Generators))
+			statLine(c, t, "Project", orDash(item.Project))
+			statLine(c, t, "Destination", orDash(item.Destination))
+			lines(c, t, "Conditions", item.Conditions)
+		}
+	case "argo-appprojects":
+		if index >= 0 && index < len(page.Projects) {
+			item := page.Projects[index]
+			statLine(c, t, "Description", orDash(item.Description))
+			lines(c, t, "Source repositories", item.SourceRepos)
+			lines(c, t, "Destinations", item.Destinations)
+			statLine(c, t, "Roles", itoa(item.Roles))
+		}
+	case "argo-repositories":
+		if index >= 0 && index < len(page.Repos) {
+			item := page.Repos[index]
+			statLine(c, t, "Type", orDash(item.Type))
+			statLine(c, t, "URL", orDash(item.URL))
+			statLine(c, t, "Project", orDash(item.Project))
+			ui.Text(c, "Credentials stay on the Secret.").TextColor(t.TextMuted)
+		}
+	case "argo-clusters":
+		if index >= 0 && index < len(page.Clusters) {
+			item := page.Clusters[index]
+			statLine(c, t, "Server", orDash(item.Server))
+			ui.Text(c, "Credentials stay on the Secret.").TextColor(t.TextMuted)
+		}
+	}
 }
 
 func detailApp(c *ui.Context, t *ui.Theme, page Page, app App, index int) {
-	kit.Panel(c, t).Children(func() {
-		ui.Text(c, app.Namespace+"/"+app.Name).FontSize(18).Bold()
-		ui.Row(c).Gap(12).AlignItems(ui.Stretch).Children(func() {
-			statCard(c, t, "Sync", shown(app.Sync), syncColor(t, app.Sync))
-			statCard(c, t, "Health", shown(app.Health), healthColor(t, app.Health))
-		})
-		if app.HealthMessage != "" {
-			ui.Text(c, app.HealthMessage).TextColor(t.TextMuted)
-		}
-		ui.Row(c).Gap(12).Children(func() {
-			mini(c, t, "Project", orDash(app.Project))
-			mini(c, t, "Destination", orDash(app.Destination))
-			mini(c, t, "Revision", orDash(ShortRevision(app.Revision)))
-			mini(c, t, "Policy", orDash(app.Policy))
-		})
-		statLine(c, t, "Source", orDash(app.Source))
-		if app.SourceType != "" {
-			statLine(c, t, "Source type", app.SourceType)
-		}
-		if len(app.Images) > 0 {
-			lines(c, t, "Images", app.Images)
-		}
-		lines(c, t, "Conditions", app.Conditions)
-		resources(c, t, app.Resources)
-		history(c, t, app.History)
-		op := app.OperationPhase
-		if app.OperationMessage != "" {
-			op = join(op, app.OperationMessage)
-		}
-		if app.OperationBy != "" {
-			op = join(op, app.OperationBy)
-		}
-		statLine(c, t, "Operation", orDash(op))
-		controls(c, page)
-		actions(c, index, []string{"sync", "refresh", "hard-refresh", "rollback", "yaml", "delete"}, page.OnAction)
+	ui.Row(c).Gap(8).AlignItems(ui.Stretch).Children(func() {
+		detailStat(c, t, "Sync", shown(app.Sync), syncColor(t, app.Sync))
+		detailStat(c, t, "Health", shown(app.Health), healthColor(t, app.Health))
 	})
+	if app.HealthMessage != "" {
+		ui.Text(c, app.HealthMessage).TextColor(t.TextMuted)
+	}
+	ui.Row(c).Gap(12).Wrap().Children(func() {
+		mini(c, t, "Project", orDash(app.Project))
+		mini(c, t, "Destination", orDash(app.Destination))
+		mini(c, t, "Revision", orDash(ShortRevision(app.Revision)))
+		mini(c, t, "Policy", orDash(app.Policy))
+	})
+	statLine(c, t, "Source", orDash(app.Source))
+	if app.SourceType != "" {
+		statLine(c, t, "Source type", app.SourceType)
+	}
+	if len(app.Images) > 0 {
+		lines(c, t, "Images", app.Images)
+	}
+	lines(c, t, "Conditions", app.Conditions)
+	resources(c, t, app.Resources)
+	history(c, t, app.History)
+	op := app.OperationPhase
+	if app.OperationMessage != "" {
+		op = join(op, app.OperationMessage)
+	}
+	if app.OperationBy != "" {
+		op = join(op, app.OperationBy)
+	}
+	statLine(c, t, "Operation", orDash(op))
+	controls(c, page)
+	actions(c, index, []string{"sync", "refresh", "hard-refresh", "rollback"}, page.OnAction)
 }
 
 func resources(c *ui.Context, t *ui.Theme, rows []Resource) {
@@ -523,7 +579,7 @@ func controls(c *ui.Context, page Page) {
 }
 
 func actions(c *ui.Context, index int, names []string, on func(int, string)) {
-	ui.Row(c).Gap(8).Children(func() {
+	ui.Row(c).Gap(8).Wrap().Children(func() {
 		for _, name := range names {
 			label := actionLabel(name)
 			if ui.Button(c, label).Clicked() && on != nil {
@@ -636,12 +692,9 @@ func hasRows(page Page) bool {
 	return len(page.Apps)+len(page.Sets)+len(page.Projects)+len(page.Repos)+len(page.Clusters) > 0
 }
 
-func clamp(selected *int, n int) int {
-	if n <= 0 {
-		return 0
-	}
+func selectedIndex(selected *int, n int) int {
 	if selected == nil || *selected < 0 || *selected >= n {
-		return 0
+		return -1
 	}
 	return *selected
 }

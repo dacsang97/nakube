@@ -11,7 +11,7 @@ import (
 	"github.com/dacsang97/nakube/internal/views/events"
 	"github.com/dacsang97/nakube/internal/views/namespaces"
 	"github.com/dacsang97/nakube/internal/views/nodes"
-	"github.com/dacsang97/nakube/internal/views/resource"
+	"github.com/dacsang97/nakube/internal/views/workloads"
 )
 
 func inspectScreen(id string) bool {
@@ -47,15 +47,24 @@ func (a *App) drawNodes(c *ui.Context, t *ui.Theme) {
 		keys[i] = row.Key
 	}
 	a.bindList(keys)
-	nodes.Draw(c, t, page, &a.listQuery, &a.listFilter, &a.listState, loading, func(c *ui.Context) {
-		if a.row < 0 || a.row >= len(page.Rows) {
-			return
-		}
-		row := page.Rows[a.row]
-		resource.Buttons(c, t, row.Identity.Kind, func(action string) {
-			a.runAction(listRow{Name: row.Name, Identity: row.Identity}, action)
+	selection := nodes.Draw(c, t, page, &a.listQuery, &a.listFilter, &a.listState, loading)
+	if selection.Valid {
+		row := page.Rows[selection.Index]
+		resourceRow := listRow{Name: row.Name, Identity: row.Identity}
+		onEdit, onRemove := a.panelResourceActions(resourceRow)
+		a.offerDetailPanel(selection.Changed, true, shellDetailPanel{
+			title:    row.Detail.Title,
+			label:    "Node details panel",
+			copyText: row.Detail.Title,
+			onEdit:   onEdit,
+			onRemove: onRemove,
+			draw: func(c *ui.Context, t *ui.Theme) {
+				kit.DetailBody(c, t, row.Detail, nil)
+			},
 		})
-	})
+	} else {
+		a.offerDetailPanel(selection.Changed, false, shellDetailPanel{})
+	}
 	a.finishInspect(keys)
 }
 
@@ -71,15 +80,24 @@ func (a *App) drawNamespaces(c *ui.Context, t *ui.Theme) {
 		keys[i] = row.Key
 	}
 	a.bindList(keys)
-	namespaces.Draw(c, t, page, &a.listQuery, &a.listFilter, &a.listState, loading, func(c *ui.Context) {
-		if a.row < 0 || a.row >= len(page.Rows) {
-			return
-		}
-		row := page.Rows[a.row]
-		resource.Buttons(c, t, row.Identity.Kind, func(action string) {
-			a.runAction(listRow{Name: row.Name, Identity: row.Identity}, action)
+	selection := namespaces.Draw(c, t, page, &a.listQuery, &a.listFilter, &a.listState, loading)
+	if selection.Valid {
+		row := page.Rows[selection.Index]
+		resourceRow := listRow{Name: row.Name, Identity: row.Identity}
+		onEdit, onRemove := a.panelResourceActions(resourceRow)
+		a.offerDetailPanel(selection.Changed, true, shellDetailPanel{
+			title:    row.Detail.Title,
+			label:    "Namespace details panel",
+			copyText: row.Detail.Title,
+			onEdit:   onEdit,
+			onRemove: onRemove,
+			draw: func(c *ui.Context, t *ui.Theme) {
+				kit.DetailBody(c, t, row.Detail, nil)
+			},
 		})
-	})
+	} else {
+		a.offerDetailPanel(selection.Changed, false, shellDetailPanel{})
+	}
 	a.finishInspect(keys)
 }
 
@@ -95,15 +113,24 @@ func (a *App) drawEvents(c *ui.Context, t *ui.Theme) {
 		keys[i] = row.Key
 	}
 	a.bindList(keys)
-	events.Draw(c, t, page, &a.listQuery, &a.listState, loading, func(c *ui.Context) {
-		if a.row < 0 || a.row >= len(page.Rows) {
-			return
-		}
-		row := page.Rows[a.row]
-		resource.Buttons(c, t, row.Identity.Kind, func(action string) {
-			a.runAction(listRow{Namespace: row.Namespace, Name: row.Identity.Name, Identity: row.Identity}, action)
+	selection := events.Draw(c, t, page, &a.listQuery, &a.listState, loading)
+	if selection.Valid {
+		row := page.Rows[selection.Index]
+		resourceRow := listRow{Namespace: row.Namespace, Name: row.Identity.Name, Identity: row.Identity}
+		onEdit, onRemove := a.panelResourceActions(resourceRow)
+		a.offerDetailPanel(selection.Changed, true, shellDetailPanel{
+			title:    row.Detail.Title,
+			label:    "Event details panel",
+			copyText: row.Detail.Title,
+			onEdit:   onEdit,
+			onRemove: onRemove,
+			draw: func(c *ui.Context, t *ui.Theme) {
+				kit.DetailBody(c, t, row.Detail, nil)
+			},
 		})
-	})
+	} else {
+		a.offerDetailPanel(selection.Changed, false, shellDetailPanel{})
+	}
 	a.finishInspect(keys)
 }
 
@@ -114,6 +141,9 @@ func (a *App) prepareInspect(id string) {
 			a.listSort = ui.SortOrder{Column: events.ColAge, Descending: true}
 		case "namespaces":
 			a.listSort = ui.SortOrder{Column: namespaces.ColName}
+		case "workloads":
+			a.listSort = ui.SortOrder{Column: workloads.ColKind}
+			a.row = -1
 		default:
 			a.listSort = ui.SortOrder{Column: nodes.ColName}
 		}

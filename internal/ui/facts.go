@@ -51,8 +51,7 @@ func Facts(c *ui.Context, t *ui.Theme, facts []Fact) {
 	}
 }
 
-// DetailView paints a selected object's facts. actions, when set, sit on
-// the title row: they belong to that object, not to the list.
+// DetailView paints a selected object's title and body.
 func DetailView(c *ui.Context, t *ui.Theme, d Detail, actions func(*ui.Context)) {
 	if d.Title != "" || actions != nil {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -66,6 +65,14 @@ func DetailView(c *ui.Context, t *ui.Theme, d Detail, actions func(*ui.Context))
 				actions(c)
 			}
 		})
+	}
+	DetailBody(c, t, d, nil)
+}
+
+// DetailBody paints facts and groups below a shell-owned title.
+func DetailBody(c *ui.Context, t *ui.Theme, d Detail, actions func(*ui.Context)) {
+	if actions != nil {
+		actions(c)
 	}
 	Facts(c, t, d.Facts)
 	for _, group := range d.Groups {

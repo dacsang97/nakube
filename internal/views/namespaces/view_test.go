@@ -24,7 +24,7 @@ func TestDrawShowsPhaseAndLabel(t *testing.T) {
 	filter := All
 	selected := 0
 	tt := ui.NewTester(func(c *ui.Context) {
-		Draw(c, c.Theme(), page, &query, &filter, &ui.ListState{Selected: &selected}, false, nil)
+		Draw(c, c.Theme(), page, &query, &filter, &ui.ListState{Selected: &selected}, false)
 	}, 1100, 700)
 	for _, want := range []string{"Namespaces", "team", "Active", "app=shop"} {
 		if !tt.HasText(want) {

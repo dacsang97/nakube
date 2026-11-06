@@ -90,13 +90,17 @@ func TestShowScreenKeepsRow(t *testing.T) {
 	a.showScreen("pods", false)
 	a.row = 3
 	a.logLines = []LogLine{{Pod: "web", Text: "ready"}}
+	a.detailPanelOpen = true
 	a.showScreen("deployments", true)
-	if a.row != 0 || len(a.logLines) != 0 {
+	if a.row != -1 || len(a.logLines) != 0 {
 		t.Fatalf("new tab inherited pods state row %d lines %d", a.row, len(a.logLines))
 	}
+	if a.detailPanelOpen {
+		t.Fatal("new tab inherited the previous detail panel")
+	}
 	a.showScreen("pods", true)
-	if a.row != 3 || len(a.logLines) != 1 || a.logLines[0].Text != "ready" {
-		t.Fatalf("pods tab lost its place: row %d lines %+v", a.row, a.logLines)
+	if a.row != 3 || len(a.logLines) != 1 || a.logLines[0].Text != "ready" || !a.detailPanelOpen {
+		t.Fatalf("pods tab lost its state: row %d lines %+v panel %v", a.row, a.logLines, a.detailPanelOpen)
 	}
 	if a.Selected() != "pods" {
 		t.Fatalf("selected %s", a.Selected())
