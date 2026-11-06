@@ -446,6 +446,12 @@ func TestSideHeaderSelectsContext(t *testing.T) {
 	a.contexts = []string{"dev", "prod"}
 	a.current = "dev"
 	tt := ui.NewTester(a.view, 1100, 720)
+	if _, ok := tt.Find("CONTEXTS"); !ok {
+		t.Fatalf("missing contexts section, texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("prod"); !ok {
+		t.Fatalf("missing context row, texts %q", tt.Texts())
+	}
 	if _, ok := tt.Find("dev"); !ok {
 		t.Fatalf("missing active context, texts %q", tt.Texts())
 	}
@@ -459,17 +465,25 @@ func TestSideHeaderNoList(t *testing.T) {
 	if _, ok := tt.Find("dev"); !ok {
 		t.Fatalf("missing active context, texts %q", tt.Texts())
 	}
+	if _, ok := tt.Find("CONTEXTS"); ok {
+		t.Fatalf("contexts section drawn without contexts, texts %q", tt.Texts())
+	}
 }
 
 func TestMenuSearchFilters(t *testing.T) {
 	a := New(cluster.NewSession())
 	a.menuQuery = "virtual"
+	a.contexts = []string{"dev", "prod"}
+	a.current = ""
 	tt := ui.NewTester(a.view, 1100, 720)
 	if !tt.HasText("VirtualServices") {
 		t.Fatalf("missing match, texts %q", tt.Texts())
 	}
 	if tt.HasText("DaemonSets") || tt.HasText("Workloads") {
 		t.Fatalf("unrelated item stayed, texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("dev"); !ok {
+		t.Fatalf("contexts section filtered by menu search, texts %q", tt.Texts())
 	}
 }
 

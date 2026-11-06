@@ -206,16 +206,7 @@ func (a *App) drawContextHeader(c *ui.Context, t *ui.Theme) {
 		ui.Text(c, "No context").FontSize(13).FontWeight(650).TextColor(t.TextMuted).SingleLine()
 		return
 	}
-	if len(a.contexts) == 0 {
-		ui.Text(c, a.current).FontSize(13).FontWeight(650).SingleLine().Tooltip(a.current)
-		return
-	}
-	sel := a.current
-	ui.Select(c, &sel, a.contexts).Grow(1).SingleLine().Tooltip(a.current)
-	if sel != a.current {
-		a.switchContext(sel)
-		a.openPage("overview")
-	}
+	ui.Text(c, a.current).FontSize(13).FontWeight(650).SingleLine().Tooltip(a.current)
 }
 
 func (a *App) drawSide(c *ui.Context, t *ui.Theme) {
@@ -232,6 +223,12 @@ func (a *App) drawSide(c *ui.Context, t *ui.Theme) {
 		})
 		ui.Scroll(c).Grow(1).FillHeight().Children(func() {
 			ui.Column(c).Padding(4, 8, 8, 8).Gap(2).Children(func() {
+				if len(a.contexts) > 0 {
+					ui.Text(c, "CONTEXTS").FontSize(11).FontWeight(600).TextColor(t.TextMuted).Padding(8, 8, 2, 8)
+					for _, name := range a.contexts {
+						a.contextRow(c, t, name, name == a.current)
+					}
+				}
 				shown := 0
 				for _, section := range Sections() {
 					items := menuItems(section, a.menuQuery)
@@ -293,6 +290,21 @@ func (a *App) sideRow(c *ui.Context, t *ui.Theme, item Item, selected bool) {
 	} else if row.Clicked() {
 		a.showScreen(item.ID, true)
 	}
+}
+
+func (a *App) contextRow(c *ui.Context, t *ui.Theme, name string, active bool) {
+	row := ui.Row(c).Height(sideRowH).Padding(0, 8).Gap(8).Radius(4).AlignItems(ui.Center)
+	icon := t.TextMuted
+	if active {
+		row.Background(t.SurfacePressed)
+		icon = t.Accent
+	} else if row.Hovered() {
+		row.Background(t.SurfaceHover)
+	}
+	row.Children(func() {
+		ui.Icon(c, IconNamed("server")).Size(16, 16).TextColor(icon).Shrink(0)
+		ui.Text(c, name).FontSize(13).SingleLine().MinWidth(0).Grow(1).Tooltip(name)
+	})
 }
 
 // sideResize is the sidebar's right edge. A drag keeps the width for this
