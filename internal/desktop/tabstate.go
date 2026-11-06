@@ -123,16 +123,6 @@ func (a *App) ensureTabs() {
 	}
 }
 
-func (a *App) body(id string) *tabBody {
-	a.ensureTabs()
-	b := a.bodies[id]
-	if b == nil {
-		b = newTabBody()
-		a.bodies[id] = b
-	}
-	return b
-}
-
 func (a *App) stash() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
