@@ -317,3 +317,31 @@ git commit -m "refactor(desktop): remove catalog page and rail plus button"
 - Old catalog.json compat: `{"pins":[...],"files":[...]}` parses (json ignores unknown keys) — pinned by TestEnsureCatalogKeepsPersistedFiles.
 - TestCatalogPage gone → desktop package fully green.
 - drawActivityBar: Settings button still highlighted on /settings; Spacer keeps it bottom-anchored; no `current` param left.
+
+## Amendment 1 (ruling after implementer BLOCKED, controller)
+
+**Root cause verified:** `drawPage`'s `case r.Match("/{id}")` is an unguarded wildcard (mygo router.go:401) — it matches `/catalog` before `default:`, rendering a generic empty list page, never "Not found". Any unknown path behaves this way (pre-existing). **Ruling:** do not gate the wildcard (design change, out of scope). `/catalog` becomes just another unknown id with no UI entry point.
+
+**Step 1c — TestCatalogRouteRemoved replaced by:**
+```go
+func TestCatalogRouteRemoved(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "missing", "config")) // hermetic: no real kubeconfig
+	s := cluster.NewSession()
+	s.SetStatePath(filepath.Join(dir, "state", "context"))
+	a := New(s)
+	a.showScreen("catalog", true)
+	tt := ui.NewTester(a.view, 1100, 720)
+	for _, gone := range []string{"Add file", "Add pasted kubeconfig", "Done"} {
+		if tt.HasText(gone) {
+			t.Fatalf("catalog page element %q still renders, texts %q", gone, tt.Texts())
+		}
+	}
+}
+```
+RED = fails on "Add file" (Catalog page still renders). GREEN = distinctive Catalog strings gone; `/catalog` falls through to the pre-existing generic-`/{id}` behavior like any unknown id.
+
+**Gate amendment:** `go test ./internal/...` gate = internal/desktop fully green; internal/cluster's pinned env failure `TestContextInfoHidesCredentials` stays out of scope (pre-existing, non-hermetic on this machine).
+
+**Accepted deviation:** plan's rail.go verbatim content included an unused `ui` import (compiler error); dropping that single import line is authorized. Everything else byte-exact.
