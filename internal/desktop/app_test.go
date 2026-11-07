@@ -510,18 +510,6 @@ func TestMenuSearchFilters(t *testing.T) {
 	}
 }
 
-func TestCatalogPage(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	a := New(cluster.NewSession())
-	a.router.Push("/catalog")
-	tt := ui.NewTester(a.view, 1100, 720)
-	for _, want := range []string{"Catalog", "Done", "Add file", "Add pasted kubeconfig", "No contexts", "~/.kube"} {
-		if !tt.HasText(want) {
-			t.Fatalf("missing %q, texts %q", want, tt.Texts())
-		}
-	}
-}
-
 func TestSwitchContextRefreshesList(t *testing.T) {
 	dir := t.TempDir()
 	kubeconfig := filepath.Join(dir, "config")
@@ -656,6 +644,78 @@ users:
 	}
 }
 
+func TestCatalogRouteRemoved(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "missing", "config")) // hermetic: no real kubeconfig
+	s := cluster.NewSession()
+	s.SetStatePath(filepath.Join(dir, "state", "context"))
+	a := New(s)
+	a.showScreen("catalog", true)
+	tt := ui.NewTester(a.view, 1100, 720)
+	for _, gone := range []string{"Add file", "Add pasted kubeconfig", "Done"} {
+		if tt.HasText(gone) {
+			t.Fatalf("catalog page element %q still renders, texts %q", gone, tt.Texts())
+		}
+	}
+}
+
+func TestEnsureCatalogKeepsPersistedFiles(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	kubeconfig := filepath.Join(dir, "extra.yaml")
+	fixture := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://127.0.0.1:6443
+  name: c
+contexts:
+- context:
+    cluster: c
+    user: u
+  name: side-ctx
+current-context: side-ctx
+users:
+- name: u
+  user:
+    token: test-token-not-for-logs
+`
+	if err := os.WriteFile(kubeconfig, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	statePath, err := cluster.StatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	catFile := filepath.Join(filepath.Dir(statePath), "catalog.json")
+	if err := os.MkdirAll(filepath.Dir(catFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"pins":["gone"],"files":["` + kubeconfig + `"]}`
+	if err := os.WriteFile(catFile, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := cluster.NewSession()
+	a := New(s)
+	a.ensureCatalog()
+	a.syncCatalog()
+	a.mu.Lock()
+	have := append([]string(nil), a.contexts...)
+	a.mu.Unlock()
+	for _, want := range []string{"side-ctx"} {
+		found := false
+		for _, name := range have {
+			if name == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("persisted file context %q missing, have %q", want, have)
+		}
+	}
+}
+
 func TestSettingsPage(t *testing.T) {
 	a := New(cluster.NewSession())
 	a.router.Push("/settings")
@@ -692,9 +752,6 @@ func TestSidebarIcons(t *testing.T) {
 	}
 	if len(seen) < 20 {
 		t.Fatalf("only %d distinct icons", len(seen))
-	}
-	if IconNamed("plus") == nil {
-		t.Fatal("the rail has no plus icon")
 	}
 }
 

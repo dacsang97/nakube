@@ -151,12 +151,8 @@ type App struct {
 	detailCopiedKey   string
 	detailCopiedUntil time.Time
 	catalogLoaded     bool
-	catalogSynced     time.Time
-	catalogPins       []string
 	catalogFiles      []string
 	catalogErr        string
-	addPath           string
-	paste             *editor.State
 
 	sidebarWidth float32
 	sideDrag     float32
@@ -464,7 +460,7 @@ func (a *App) view(c *ui.Context) {
 	shell := ui.Row(c).Fill().AlignItems(ui.Stretch).Background(shellBackdrop(t)).Padding(shellGap).Gap(shellGap)
 	shell.Children(func() {
 		ui.Row(c).Shrink(0).FillHeight().Radius(shellRadius).Clip().Background(t.Surface).Border(1, t.Border).Children(func() {
-			a.drawActivityBar(c, t, current)
+			a.drawActivityBar(c, t)
 			a.drawSide(c, t, current, contexts)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Label("Main content panel").Children(func() {
@@ -498,9 +494,6 @@ func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, 
 		return
 	}
 	switch {
-	case r.Match("/catalog"):
-		r.Title("Catalog")
-		a.drawCatalog(c, t, current)
 	case r.Match("/settings"):
 		r.Title("Settings")
 		a.drawSettings(c, t)
@@ -588,13 +581,6 @@ func (a *App) togglePage(path string) {
 		return
 	}
 	a.showScreen(id, true)
-}
-
-func (a *App) closeCatalog() {
-	a.ensureTabs()
-	if id, ok := a.tabs.byScreen("catalog"); ok {
-		a.closeTab(id)
-	}
 }
 
 func pagePath(id string) string {

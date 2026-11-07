@@ -133,23 +133,14 @@ func (a *App) sideWidth() float32 {
 	return a.sidebarWidth
 }
 
-func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme, current string) {
+func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme) {
 	a.ensureCatalog()
 	page := ""
 	if a.router != nil {
 		page = screenID(a.router.Path())
 	}
-	ui.Column(c).Width(activityBarW).FillHeight().Shrink(0).Background(t.Surface).BorderEndWidth(1).BorderColor(t.Border).Children(func() {
-		ui.Scroll(c).Grow(1).FillHeight().Children(func() {
-			ui.Column(c).Padding(4, 0).Gap(4).AlignItems(ui.Center).Children(func() {
-				for _, name := range a.catalogPins {
-					a.pinButton(c, t, name, name == current)
-				}
-				a.activityButton(c, t, "plus", "Catalog", page == "catalog", func() {
-					a.togglePage("/catalog")
-				})
-			})
-		})
+	ui.Column(c).Width(activityBarW).FillHeight().Shrink(0).Background(t.Surface).BorderEndWidth(1).BorderColor(t.Border).AlignItems(ui.Center).Children(func() {
+		ui.Spacer(c).Grow(1)
 		ui.Column(c).Shrink(0).Padding(4, 0, 8, 0).AlignItems(ui.Center).Children(func() {
 			a.activityButton(c, t, "settings", "Settings", page == "settings", func() {
 				a.togglePage("/settings")
@@ -178,25 +169,6 @@ func (a *App) activityButton(c *ui.Context, t *ui.Theme, icon, tip string, activ
 		})
 		if btn.Clicked() {
 			fn()
-		}
-	})
-}
-
-func (a *App) pinButton(c *ui.Context, t *ui.Theme, name string, active bool) {
-	ui.Box(c).Height(activitySlot).AlignSelf(ui.Stretch).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-		btn := ui.Button(c, "").Size(32, 32).Padding(0).Radius(8).AlignItems(ui.Center).Justify(ui.Center).Tooltip(name).Label(name)
-		btn.Border(0, ui.Transparent)
-		if active {
-			btn.Background(t.Accent).TextColor(t.AccentText)
-		} else {
-			btn.Background(t.SurfacePressed).TextColor(t.Text)
-		}
-		btn.Children(func() {
-			ui.Text(c, railLabel(name)).FontSize(13).FontWeight(650)
-		})
-		if btn.Clicked() {
-			a.switchContext(name)
-			a.openPage("overview")
 		}
 	})
 }
