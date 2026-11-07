@@ -470,6 +470,26 @@ func TestSideHeaderNoList(t *testing.T) {
 	}
 }
 
+func TestContextsFilterBySearch(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.menuQuery = "GH"
+	a.contexts = []string{"do-ght", "ght-hz", "arn:aws:eks:ap-southeast-1"}
+	a.current = ""
+	tt := ui.NewTester(a.view, 1100, 720)
+	if _, ok := tt.Find("CONTEXTS"); !ok {
+		t.Fatalf("missing contexts section, texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("do-ght"); !ok {
+		t.Fatalf("missing matching context, texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("ght-hz"); !ok {
+		t.Fatalf("missing matching context, texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("arn:aws:eks:ap-southeast-1"); ok {
+		t.Fatalf("non-matching context stayed, texts %q", tt.Texts())
+	}
+}
+
 func TestMenuSearchFilters(t *testing.T) {
 	a := New(cluster.NewSession())
 	a.menuQuery = "virtual"
@@ -482,8 +502,11 @@ func TestMenuSearchFilters(t *testing.T) {
 	if tt.HasText("DaemonSets") || tt.HasText("Workloads") {
 		t.Fatalf("unrelated item stayed, texts %q", tt.Texts())
 	}
-	if _, ok := tt.Find("dev"); !ok {
-		t.Fatalf("contexts section filtered by menu search, texts %q", tt.Texts())
+	if _, ok := tt.Find("dev"); ok {
+		t.Fatalf("context row survived unrelated filter, texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("CONTEXTS"); ok {
+		t.Fatalf("contexts header survived unrelated filter, texts %q", tt.Texts())
 	}
 }
 

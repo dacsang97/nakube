@@ -224,9 +224,20 @@ func (a *App) drawSide(c *ui.Context, t *ui.Theme, current string, contexts []st
 		ui.Scroll(c).Grow(1).FillHeight().Children(func() {
 			ui.Column(c).Padding(4, 8, 8, 8).Gap(2).Children(func() {
 				if len(contexts) > 0 {
-					ui.Text(c, "CONTEXTS").FontSize(11).FontWeight(600).TextColor(t.TextMuted).Padding(8, 8, 2, 8)
-					for _, name := range contexts {
-						a.contextRow(c, t, name, name == current)
+					shown := contexts
+					if q := strings.ToLower(strings.TrimSpace(a.menuQuery)); q != "" {
+						shown = nil
+						for _, name := range contexts {
+							if strings.Contains(strings.ToLower(name), q) {
+								shown = append(shown, name)
+							}
+						}
+					}
+					if len(shown) > 0 {
+						ui.Text(c, "CONTEXTS").FontSize(11).FontWeight(600).TextColor(t.TextMuted).Padding(8, 8, 2, 8)
+						for _, name := range shown {
+							a.contextRow(c, t, name, name == current)
+						}
 					}
 				}
 				shown := 0
