@@ -460,8 +460,8 @@ func (a *App) view(c *ui.Context) {
 	shell := ui.Row(c).Fill().AlignItems(ui.Stretch).Background(shellBackdrop(t)).Padding(shellGap).Gap(shellGap)
 	shell.Children(func() {
 		ui.Row(c).Shrink(0).FillHeight().Radius(shellRadius).Clip().Background(t.Surface).Border(1, t.Border).Children(func() {
-			a.drawActivityBar(c, t)
-			a.drawSide(c, t, current, contexts)
+			a.drawActivityBar(c, t, current, contexts)
+			a.drawSide(c, t, current)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Label("Main content panel").Children(func() {
 			a.drawTabs(c, t)

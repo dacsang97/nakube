@@ -133,14 +133,20 @@ func (a *App) sideWidth() float32 {
 	return a.sidebarWidth
 }
 
-func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme) {
+func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme, current string, contexts []string) {
 	a.ensureCatalog()
 	page := ""
 	if a.router != nil {
 		page = screenID(a.router.Path())
 	}
 	ui.Column(c).Width(activityBarW).FillHeight().Shrink(0).Background(t.Surface).BorderEndWidth(1).BorderColor(t.Border).AlignItems(ui.Center).Children(func() {
-		ui.Spacer(c).Grow(1)
+		ui.Scroll(c).Grow(1).FillHeight().Shrink(0).Children(func() {
+			ui.Column(c).Padding(4, 0).Gap(4).AlignItems(ui.Center).Children(func() {
+				for _, name := range contexts {
+					a.railContextButton(c, t, name, name == current)
+				}
+			})
+		})
 		ui.Column(c).Shrink(0).Padding(4, 0, 8, 0).AlignItems(ui.Center).Children(func() {
 			a.activityButton(c, t, "settings", "Settings", page == "settings", func() {
 				a.togglePage("/settings")
@@ -173,6 +179,27 @@ func (a *App) activityButton(c *ui.Context, t *ui.Theme, icon, tip string, activ
 	})
 }
 
+func (a *App) railContextButton(c *ui.Context, t *ui.Theme, name string, active bool) {
+	slot := ui.Box(c).Height(activitySlot).AlignSelf(ui.Stretch).AlignItems(ui.Center).Justify(ui.Center)
+	slot.Children(func() {
+		btn := ui.Button(c, "").Size(32, 32).Padding(0).Radius(6).AlignItems(ui.Center).Justify(ui.Center).Tooltip(name).Label(name)
+		if active {
+			btn.Background(t.SurfacePressed)
+		} else if btn.Hovered() {
+			btn.Background(t.SurfaceHover)
+		}
+		btn.Children(func() {
+			ui.Icon(c, IconNamed("server")).Size(20, 20).TextColor(contextColor(name))
+		})
+		if !active && btn.Clicked() {
+			a.switchContext(name)
+		}
+		if active {
+			ui.Box(c).Absolute().Left(22).Top(22).Width(6).Height(6).Radius(3).Background(t.Success)
+		}
+	})
+}
+
 func (a *App) drawContextHeader(c *ui.Context, t *ui.Theme, current string) {
 	if current == "" {
 		ui.Text(c, "No context").FontSize(13).FontWeight(650).TextColor(t.TextMuted).SingleLine()
@@ -181,7 +208,7 @@ func (a *App) drawContextHeader(c *ui.Context, t *ui.Theme, current string) {
 	ui.Text(c, current).FontSize(13).FontWeight(650).SingleLine().Tooltip(current)
 }
 
-func (a *App) drawSide(c *ui.Context, t *ui.Theme, current string, contexts []string) {
+func (a *App) drawSide(c *ui.Context, t *ui.Theme, current string) {
 	page := ""
 	if a.router != nil {
 		page = screenID(a.router.Path())
@@ -195,23 +222,6 @@ func (a *App) drawSide(c *ui.Context, t *ui.Theme, current string, contexts []st
 		})
 		ui.Scroll(c).Grow(1).FillHeight().Children(func() {
 			ui.Column(c).Padding(4, 8, 8, 8).Gap(2).Children(func() {
-				if len(contexts) > 0 {
-					shown := contexts
-					if q := strings.ToLower(strings.TrimSpace(a.menuQuery)); q != "" {
-						shown = nil
-						for _, name := range contexts {
-							if strings.Contains(strings.ToLower(name), q) {
-								shown = append(shown, name)
-							}
-						}
-					}
-					if len(shown) > 0 {
-						ui.Text(c, "CONTEXTS").FontSize(11).FontWeight(600).TextColor(t.TextMuted).Padding(8, 8, 2, 8)
-						for _, name := range shown {
-							a.contextRow(c, t, name, name == current)
-						}
-					}
-				}
 				shown := 0
 				for _, section := range Sections() {
 					items := menuItems(section, a.menuQuery)
@@ -272,27 +282,6 @@ func (a *App) sideRow(c *ui.Context, t *ui.Theme, item Item, selected bool) {
 		a.showScreen(item.ID, false)
 	} else if row.Clicked() {
 		a.showScreen(item.ID, true)
-	}
-}
-
-func (a *App) contextRow(c *ui.Context, t *ui.Theme, name string, active bool) {
-	row := ui.Row(c).Height(sideRowH).Padding(0, 8).Gap(8).Radius(4).AlignItems(ui.Center)
-	icon := contextColor(name)
-	if active {
-		row.Background(t.SurfacePressed)
-		icon = t.Accent
-	} else if row.Hovered() {
-		row.Background(t.SurfaceHover)
-	}
-	row.Children(func() {
-		ui.Icon(c, IconNamed("server")).Size(16, 16).TextColor(icon).Shrink(0)
-		ui.Text(c, name).FontSize(13).SingleLine().MinWidth(0).Grow(1).Tooltip(name)
-		if active {
-			ui.Box(c).Width(6).Height(6).Radius(3).Background(t.Success).Shrink(0)
-		}
-	})
-	if !active && row.Clicked() {
-		a.switchContext(name)
 	}
 }
 

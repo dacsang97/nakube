@@ -441,22 +441,6 @@ func TestEmptyContextView(t *testing.T) {
 	}
 }
 
-func TestSideHeaderSelectsContext(t *testing.T) {
-	a := New(cluster.NewSession())
-	a.contexts = []string{"dev", "prod"}
-	a.current = "dev"
-	tt := ui.NewTester(a.view, 1100, 720)
-	if _, ok := tt.Find("CONTEXTS"); !ok {
-		t.Fatalf("missing contexts section, texts %q", tt.Texts())
-	}
-	if _, ok := tt.Find("prod"); !ok {
-		t.Fatalf("missing context row, texts %q", tt.Texts())
-	}
-	if _, ok := tt.Find("dev"); !ok {
-		t.Fatalf("missing active context, texts %q", tt.Texts())
-	}
-}
-
 func TestSideHeaderNoList(t *testing.T) {
 	a := New(cluster.NewSession())
 	a.contexts = nil
@@ -470,43 +454,30 @@ func TestSideHeaderNoList(t *testing.T) {
 	}
 }
 
-func TestContextsFilterBySearch(t *testing.T) {
+func TestRailListsContexts(t *testing.T) {
 	a := New(cluster.NewSession())
-	a.menuQuery = "GH"
-	a.contexts = []string{"do-ght", "ght-hz", "arn:aws:eks:ap-southeast-1"}
-	a.current = ""
+	a.contexts = []string{"dev", "prod"}
+	a.current = "dev"
 	tt := ui.NewTester(a.view, 1100, 720)
-	if _, ok := tt.Find("CONTEXTS"); !ok {
-		t.Fatalf("missing contexts section, texts %q", tt.Texts())
+	for _, name := range []string{"dev", "prod"} {
+		if _, ok := tt.Find(name); !ok {
+			t.Fatalf("rail misses context %q (label), texts %q", name, tt.Texts())
+		}
 	}
-	if _, ok := tt.Find("do-ght"); !ok {
-		t.Fatalf("missing matching context, texts %q", tt.Texts())
-	}
-	if _, ok := tt.Find("ght-hz"); !ok {
-		t.Fatalf("missing matching context, texts %q", tt.Texts())
-	}
-	if _, ok := tt.Find("arn:aws:eks:ap-southeast-1"); ok {
-		t.Fatalf("non-matching context stayed, texts %q", tt.Texts())
+	if tt.HasText("CONTEXTS") {
+		t.Fatalf("sidebar contexts section survived the move, texts %q", tt.Texts())
 	}
 }
 
 func TestMenuSearchFilters(t *testing.T) {
 	a := New(cluster.NewSession())
 	a.menuQuery = "virtual"
-	a.contexts = []string{"dev", "prod"}
-	a.current = ""
 	tt := ui.NewTester(a.view, 1100, 720)
 	if !tt.HasText("VirtualServices") {
 		t.Fatalf("missing match, texts %q", tt.Texts())
 	}
 	if tt.HasText("DaemonSets") || tt.HasText("Workloads") {
 		t.Fatalf("unrelated item stayed, texts %q", tt.Texts())
-	}
-	if _, ok := tt.Find("dev"); ok {
-		t.Fatalf("context row survived unrelated filter, texts %q", tt.Texts())
-	}
-	if _, ok := tt.Find("CONTEXTS"); ok {
-		t.Fatalf("contexts header survived unrelated filter, texts %q", tt.Texts())
 	}
 }
 
@@ -584,7 +555,7 @@ users:
 	t.Fatal("switch did not complete")
 }
 
-func TestContextRowClickStaysOnPage(t *testing.T) {
+func TestRailContextClickStaysOnPage(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	kubeconfig := filepath.Join(dir, "kubeconfig")
