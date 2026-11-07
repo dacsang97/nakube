@@ -294,7 +294,7 @@ func (a *App) sideRow(c *ui.Context, t *ui.Theme, item Item, selected bool) {
 
 func (a *App) contextRow(c *ui.Context, t *ui.Theme, name string, active bool) {
 	row := ui.Row(c).Height(sideRowH).Padding(0, 8).Gap(8).Radius(4).AlignItems(ui.Center)
-	icon := t.TextMuted
+	icon := contextColor(name)
 	if active {
 		row.Background(t.SurfacePressed)
 		icon = t.Accent
@@ -304,6 +304,9 @@ func (a *App) contextRow(c *ui.Context, t *ui.Theme, name string, active bool) {
 	row.Children(func() {
 		ui.Icon(c, IconNamed("server")).Size(16, 16).TextColor(icon).Shrink(0)
 		ui.Text(c, name).FontSize(13).SingleLine().MinWidth(0).Grow(1).Tooltip(name)
+		if active {
+			ui.Box(c).Width(6).Height(6).Radius(3).Background(t.Success).Shrink(0)
+		}
 	})
 	if !active && row.Clicked() {
 		a.switchContext(name)
