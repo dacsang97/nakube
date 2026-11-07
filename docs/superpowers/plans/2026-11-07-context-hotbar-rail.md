@@ -135,3 +135,9 @@ git add internal/desktop/shell.go internal/desktop/app.go internal/desktop/app_t
 git commit -m "feat(desktop): move context list into the activity rail"
 ```
 No push. Report status, RED/GREEN outputs, commit hash, stat, concerns.
+
+## Amendment 1 (controller, after worker RED report at BASE 4a94e28)
+The Step-1 RED expectation was stale: until Step 2c/2d delete the sidebar rows, the legacy `contextRow` list still renders and satisfies both `Find("dev"/"prod")` and `Click("prod")`. Actual RED at BASE:
+- `TestRailListsContexts` FAIL — `sidebar contexts section survived the move` (the `HasText("CONTEXTS")` assertion): **valid structural gate**, this is the correct RED for the move.
+- `TestRailContextClickStaysOnPage` PASS pre-change — legacy sidebar row satisfies the click; the test becomes the real gate only after Step 2 removes `contextRow` (post-change, `Click("prod")` can only hit the rail label).
+RULING: accept this half-RED as the valid pre-implementation state; proceed with Step 2 as written. GREEN gates unchanged (both tests must pass with only rail-side matches, verified by the Step 3 sanity greps). Also authorized: line-number drift (contextRow at shell.go:278, call site app.go:463-464, "CONTEXTS" literal at shell.go:209) — signatures/literals in the plan are authoritative.
