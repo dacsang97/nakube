@@ -156,24 +156,24 @@ func ownedPod(pod *corev1.Pod) bool {
 func (a *App) StartPhoneListener(ctx context.Context) {
 	ip, err := tailscaleIPv4(ctx)
 	if err != nil {
-		a.setMobileConnection("", nil, errors.New("Tailscale is unavailable. Sign in to Tailscale and restart NaKube"))
+		a.setMobileConnection("", nil, errors.New("tailscale is unavailable; sign in to Tailscale and restart NaKube"))
 		return
 	}
 	dnsName, err := tailscaleDNSName(ctx)
 	if err != nil {
-		a.setMobileConnection("", nil, errors.New("Tailscale MagicDNS is unavailable. Enable MagicDNS and restart NaKube"))
+		a.setMobileConnection("", nil, errors.New("tailscale MagicDNS is unavailable; enable MagicDNS and restart NaKube"))
 		return
 	}
 	qr, err := mobilePairingBitmap(dnsName)
 	if err != nil {
-		a.setMobileConnection("", nil, errors.New("Na Kube could not create the mobile pairing code"))
+		a.setMobileConnection("", nil, errors.New("could not create the mobile pairing code"))
 		return
 	}
 	_, err = remote.ListenTailscale(ctx, func(context.Context) (string, error) {
 		return ip, nil
 	}, remote.Handler(Phone{App: a}))
 	if err != nil {
-		a.setMobileConnection("", nil, errors.New("Na Kube could not listen on the Tailscale address"))
+		a.setMobileConnection("", nil, errors.New("could not listen on the Tailscale address"))
 		return
 	}
 	a.setMobileConnection(fmt.Sprintf("http://%s:%d", dnsName, remote.Port), qr, nil)
