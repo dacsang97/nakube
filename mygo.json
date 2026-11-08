@@ -5,8 +5,12 @@
   "version": "0.1.0",
   "main": "./cmd/nakube",
   "out": "build",
+  "icon": "assets/icon/icon.png",
   "linux": {
     "maintainer": "NaKube",
     "webview": false
+  },
+  "macos": {
+    "icon": "assets/icon/AppIcon.icns"
   }
 }
