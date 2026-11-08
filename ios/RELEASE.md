@@ -9,21 +9,26 @@ sign, upload, or create a GitHub Release. Xcode Cloud owns signed archives.
 ## Prepare a release
 
 [`scripts/bump-ios-version.sh`](../scripts/bump-ios-version.sh) updates the
-project version and build number, then prints the exact Git commands for the
-operator to review. It never commits, tags, or pushes.
-Run it from a checkout containing the changes intended for release, with no
-unrelated staged changes, and fetch remote tags before choosing a version.
+project version and build number, commits only the project version settings,
+creates an annotated iOS tag, and atomically pushes `main` and that tag to
+`origin`. It requires a clean `main`, configured Git identity, an accessible
+`origin/main`, no missing remote commits, and an unused tag. Local commits ahead
+of `origin/main` are included in the release. It fetches the remote branch and
+tags before changing files.
+
+Run checks before releasing; the release command does not build the app:
 
 ```sh
+scripts/check-swift.sh
 scripts/bump-ios-version.sh --dry-run 1.2.3
 scripts/bump-ios-version.sh 1.2.3
-scripts/check-swift.sh
 ```
 
-Review the version diff and checks, then use the printed commands. Push only the
-explicit iOS tag, not `--tags` or `--follow-tags`, so an unrelated desktop tag
-cannot start a desktop release. A version release uses `ios-v1.2.3`. To release
-another source build of the same marketing version:
+`--dry-run` performs the same preflight checks and fetch, but does not edit
+files, commit, create tags, or push. The push explicitly includes only the
+release branch and iOS tag, even when Git's `push.followTags` is enabled.
+A version release uses `ios-v1.2.3`. To release another source build of the
+same marketing version:
 
 ```sh
 scripts/bump-ios-version.sh --dry-run --build-only
@@ -33,6 +38,11 @@ scripts/bump-ios-version.sh --build-only
 Build-only tags include the incremented source build, such as
 `ios-v1.2.3-build.3`. The tag must point to the commit containing the version
 settings, not to its parent. Repeated dry runs do not change any file.
+
+If the atomic push fails, no branch/tag pair is partially published. The local
+release commit and tag remain for inspection; use the retry command printed by
+the script after resolving the failure. Do not rerun the bump command, which
+would select another source build or reject the existing version tag.
 
 ### Source build versus distributed build
 
@@ -96,8 +106,8 @@ team member with the necessary permissions:
    prerequisites (including required app artwork and metadata) before enabling
    uploads. A successful unsigned GitHub build does not prove signing or
    TestFlight readiness. No Apple credentials are needed in GitHub Actions.
-6. Push the release commit and its explicit `ios-v…` tag using the reviewed
-   commands. In Cloud, confirm the selected tag and the Archive result. For
+6. Run the release script on clean `main` to push the release commit and its
+   explicit `ios-v…` tag. In Cloud, confirm the selected tag and the Archive result. For
    TestFlight, correlate the uploaded build with the Cloud run using
    `CI_BUILD_NUMBER`, not the source build counter.
 
