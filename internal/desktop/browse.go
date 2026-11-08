@@ -484,8 +484,21 @@ func (a *App) fetchList(ctx context.Context, id string) ([]string, []listRow, st
 			}
 			return nil, nil, "", err
 		}
-		return genericColumns(), genericListRows(rows, kind.GVR, kindLabel(kind.ID)), notice, nil
+		return genericColumns(), a.filterListRows(genericListRows(rows, kind.GVR, kindLabel(kind.ID))), notice, nil
 	}
+}
+
+func (a *App) filterListRows(rows []listRow) []listRow {
+	if a.nsFilter == "" {
+		return rows
+	}
+	out := make([]listRow, 0, len(rows))
+	for _, row := range rows {
+		if row.Namespace == a.nsFilter {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 func (a *App) genericRows(ctx context.Context, kind namedKind, missing string) ([]string, []listRow, string, error) {
@@ -496,7 +509,7 @@ func (a *App) genericRows(ctx context.Context, kind namedKind, missing string) (
 		}
 		return nil, nil, "", err
 	}
-	return genericColumns(), genericListRows(rows, kind.GVR, kind.Kind), "", nil
+	return genericColumns(), a.filterListRows(genericListRows(rows, kind.GVR, kind.Kind)), "", nil
 }
 
 func (a *App) istioRows(ctx context.Context, id string) ([]string, []listRow, string, error) {
@@ -515,7 +528,7 @@ func (a *App) istioRows(ctx context.Context, id string) ([]string, []listRow, st
 		gvr := schema.GroupVersionResource{Group: group, Version: ver, Resource: resource}
 		rows, err := a.session.ListGeneric(ctx, gvr, "")
 		if err == nil {
-			return genericColumns(), genericListRows(rows, gvr, istioKindName(id)), "", nil
+			return genericColumns(), a.filterListRows(genericListRows(rows, gvr, istioKindName(id))), "", nil
 		}
 		last = err
 		if !apierrors.IsNotFound(err) {

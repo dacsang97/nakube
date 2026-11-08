@@ -90,3 +90,20 @@ func hasAction(actions []string, want string) bool {
 	}
 	return false
 }
+
+func TestFilterListRows(t *testing.T) {
+	a := New(cluster.NewSession())
+	rows := []listRow{
+		{Namespace: "ns-a", Name: "one"},
+		{Namespace: "ns-b", Name: "two"},
+	}
+	a.nsFilter = "ns-a"
+	got := a.filterListRows(rows)
+	if len(got) != 1 || got[0].Namespace != "ns-a" {
+		t.Fatalf("filtered rows = %+v", got)
+	}
+	a.nsFilter = ""
+	if got := a.filterListRows(rows); len(got) != 2 {
+		t.Fatalf("all rows = %+v", got)
+	}
+}

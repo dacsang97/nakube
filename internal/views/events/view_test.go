@@ -20,7 +20,7 @@ func TestDrawShowsWarningObjectAndMessage(t *testing.T) {
 		InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "api"},
 		Count:          3,
 	}
-	page := Build([]*corev1.Event{item}, "", ColAge, true, now)
+	page := Build([]*corev1.Event{item}, "", ColAge, true, now, "")
 	query := ""
 	selected := 0
 	tt := ui.NewTester(func(c *ui.Context) {

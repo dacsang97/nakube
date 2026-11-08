@@ -107,7 +107,7 @@ func (a *App) drawEvents(c *ui.Context, t *ui.Theme) {
 	loading := a.errText == "" && !a.kindReady("Event") && len(items) == 0
 	a.mu.Unlock()
 	a.prepareInspect("events")
-	page := events.Build(items, a.listQuery, a.listSort.Column, a.listSort.Descending, time.Now())
+	page := events.Build(items, a.listQuery, a.listSort.Column, a.listSort.Descending, time.Now(), a.nsFilter)
 	keys := make([]string, len(page.Rows))
 	for i, row := range page.Rows {
 		keys[i] = row.Key
