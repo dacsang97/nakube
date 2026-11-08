@@ -76,7 +76,7 @@ team member with the necessary permissions:
 
 1. Open `ios/NakubeRemote/NakubeRemote.xcodeproj` in full Xcode. Select the shared
    `NakubeRemote` scheme. In **Signing & Capabilities**, keep automatic signing
-   enabled and confirm the Apple team and the `io.gnas.nakube.remote` bundle ID
+   enabled and confirm the Apple team and the `io.gnas.nakube.mobile` bundle ID
    match the intended App Store Connect app. If using a different team, update
    both target build configurations and use a bundle ID registered to that team.
 2. Use **Product → Xcode Cloud → Create Workflow** to authorize this GitHub
