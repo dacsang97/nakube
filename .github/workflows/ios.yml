@@ -1,0 +1,47 @@
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    tags: ['ios/v*']
+    paths:
+      - 'ios/**'
+      - 'scripts/check-swift.sh'
+      - 'scripts/bump-ios-version.sh'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'scripts/check-swift.sh'
+      - 'scripts/bump-ios-version.sh'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift:
+    name: Swift checks
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      # Use the image's selected full Xcode, rather than an uninstalled fixed path.
+      - name: Check script syntax
+        run: |
+          bash -n scripts/check-swift.sh
+          bash -n scripts/bump-ios-version.sh
+          bash -n ios/NakubeRemote/ci_scripts/ci_post_clone.sh
+      - name: Validate iOS tag identity
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          CI_TAG: ${{ github.ref_name }}
+          CI_PRIMARY_REPOSITORY_PATH: ${{ github.workspace }}
+        run: ios/NakubeRemote/ci_scripts/ci_post_clone.sh
+      - name: Compile Debug and Release for iOS Simulator
+        run: scripts/check-swift.sh
