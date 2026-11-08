@@ -6,6 +6,8 @@
 	<string>NaKube</string>
 	<key>CFBundleName</key>
 	<string>NaKube</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan the QR code shown by Na Kube Desktop to connect over Tailscale.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSExceptionDomains</key>

@@ -615,19 +615,167 @@ users:
 	}
 }
 
-func TestCatalogRouteRemoved(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	t.Setenv("KUBECONFIG", filepath.Join(dir, "missing", "config")) // hermetic: no real kubeconfig
-	s := cluster.NewSession()
-	s.SetStatePath(filepath.Join(dir, "state", "context"))
-	a := New(s)
-	a.showScreen("catalog", true)
+func TestSettingsCatalog(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KUBECONFIG", filepath.Join(home, "missing"))
+	a := New(cluster.NewSession())
+	a.current = "prod"
+	a.contextInfos = []cluster.ContextInfo{{
+		Name: "prod", Cluster: "production", Namespace: "shop", Server: "https://prod.example",
+	}}
+	a.router.Push("/settings")
 	tt := ui.NewTester(a.view, 1100, 720)
-	for _, gone := range []string{"Add file", "Add pasted kubeconfig", "Done"} {
-		if tt.HasText(gone) {
-			t.Fatalf("catalog page element %q still renders, texts %q", gone, tt.Texts())
+	for _, want := range []string{"Settings", "Catalog", "Manage Kubeconfigs", "Sync files", "Sync folder", "Paste kubeconfig", "Synced Items", "Built-in", "Contexts", "prod", "production · shop", "https://prod.example", "Current"} {
+		if !tt.HasText(want) {
+			t.Fatalf("missing %q, texts %q", want, tt.Texts())
 		}
+	}
+	if err := tt.Click("Paste kubeconfig"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("Add kubeconfig") || !tt.HasText("Kubeconfig YAML") {
+		t.Fatalf("paste dialog missing, texts %q", tt.Texts())
+	}
+	if err := tt.Click("Cancel"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCatalogSourceAddAndRemovePersists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KUBECONFIG", filepath.Join(home, "missing"))
+	path := filepath.Join(t.TempDir(), "team.yaml")
+	body := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://team.example
+  name: team
+contexts:
+- context:
+    cluster: team
+    user: member
+  name: team-context
+users:
+- name: member
+  user: {}
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := New(cluster.NewSession())
+	if err := a.addCatalogPaths([]string{path}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := readCatalog(a.session)
+	if err != nil || len(state.Files) != 1 || !sameCatalogPath(state.Files[0], path) {
+		t.Fatalf("catalog after add = %+v, err %v", state, err)
+	}
+	if len(a.contextInfos) != 1 || a.contextInfos[0].Name != "team-context" {
+		t.Fatalf("contexts after add = %+v", a.contextInfos)
+	}
+	if err := a.removeCatalogPath(path); err != nil {
+		t.Fatal(err)
+	}
+	state, err = readCatalog(a.session)
+	if err != nil || len(state.Files) != 0 {
+		t.Fatalf("catalog after remove = %+v, err %v", state, err)
+	}
+	if len(a.session.ExtraKubeconfigs()) != 0 {
+		t.Fatalf("session still loads %v", a.session.ExtraKubeconfigs())
+	}
+	for _, info := range a.contextInfos {
+		if info.Name == "team-context" {
+			t.Fatalf("removed context remains in %+v", a.contextInfos)
+		}
+	}
+}
+
+func TestCatalogRemovalKeepsOverlappingSourceLoaded(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KUBECONFIG", filepath.Join(home, "missing"))
+	dir := t.TempDir()
+	path := filepath.Join(dir, "shared.yaml")
+	body := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://shared.example
+  name: shared
+contexts:
+- context:
+    cluster: shared
+    user: member
+  name: shared-context
+users:
+- name: member
+  user: {}
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := New(cluster.NewSession())
+	if err := a.addCatalogPaths([]string{dir, path}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.removeCatalogPath(dir); err != nil {
+		t.Fatal(err)
+	}
+	extra := a.session.ExtraKubeconfigs()
+	if len(extra) != 1 || !sameCatalogPath(extra[0], path) {
+		t.Fatalf("remaining kubeconfigs = %v", extra)
+	}
+	if len(a.contextInfos) != 1 || a.contextInfos[0].Name != "shared-context" {
+		t.Fatalf("remaining contexts = %+v", a.contextInfos)
+	}
+}
+
+func TestCatalogPasteImportsPrivateFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KUBECONFIG", filepath.Join(home, "missing"))
+	a := New(cluster.NewSession())
+	body := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://pasted.example
+  name: pasted
+contexts:
+- context:
+    cluster: pasted
+    user: pasted
+  name: pasted-context
+users:
+- name: pasted
+  user: {}
+`
+	if err := a.importCatalog(body); err != nil {
+		t.Fatal(err)
+	}
+	state, err := readCatalog(a.session)
+	if err != nil || len(state.Files) != 1 {
+		t.Fatalf("catalog = %+v, err %v", state, err)
+	}
+	dir, err := catalogDir(a.session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(state.Files[0], dir+string(filepath.Separator)) {
+		t.Fatalf("pasted kubeconfig stored outside private catalog: %s", state.Files[0])
+	}
+	info, err := os.Stat(state.Files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("pasted kubeconfig mode = %o", info.Mode().Perm())
+	}
+	if len(a.contextInfos) != 1 || a.contextInfos[0].Name != "pasted-context" {
+		t.Fatalf("contexts = %+v", a.contextInfos)
 	}
 }
 
@@ -691,10 +839,57 @@ func TestSettingsPage(t *testing.T) {
 	a := New(cluster.NewSession())
 	a.router.Push("/settings")
 	tt := ui.NewTester(a.view, 1100, 720)
-	for _, want := range []string{"Settings", "Appearance", "System", "Light", "Dark"} {
+	if err := tt.Click("Theme"); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.router.Path(); got != "/settings" {
+		t.Fatalf("settings section changed router path to %q", got)
+	}
+	for _, want := range []string{"Settings", "Catalog", "Theme", "Na Kube Mobile", "Appearance", "System", "Light", "Dark"} {
 		if !tt.HasText(want) {
 			t.Fatalf("missing %q, texts %q", want, tt.Texts())
 		}
+	}
+	exactCount := func(want string) int {
+		count := 0
+		for _, text := range tt.Texts() {
+			if text == want {
+				count++
+			}
+		}
+		return count
+	}
+	if got := exactCount("Theme"); got < 2 {
+		t.Fatalf("theme tab title was not updated, count %d in %q", got, tt.Texts())
+	}
+	a.mobileAddress = "http://desktop.tailnet.ts.net:47623"
+	qr, err := mobilePairingBitmap("desktop.tailnet.ts.net")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.mobileQR = qr
+	if err := tt.Click("Na Kube Mobile"); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.router.Path(); got != "/settings" {
+		t.Fatalf("mobile section changed router path to %q", got)
+	}
+	for _, want := range []string{"Pair this computer", "Connect a phone on the same Tailscale network.", "Scan with Na Kube Mobile", a.mobileAddress} {
+		if !tt.HasText(want) {
+			t.Fatalf("mobile settings missing %q, texts %q", want, tt.Texts())
+		}
+	}
+	if got := exactCount("Na Kube Mobile"); got < 2 {
+		t.Fatalf("mobile tab title was not updated, count %d in %q", got, tt.Texts())
+	}
+	if err := tt.Click("Copy address"); err != nil {
+		t.Fatal(err)
+	}
+	if got := tt.Clipboard(); got != a.mobileAddress {
+		t.Fatalf("copied address %q", got)
+	}
+	if got := mobilePairingURL("desktop.tailnet.ts.net"); got != "nakube://connect?host=desktop.tailnet.ts.net&port=47623" {
+		t.Fatalf("pairing URL %q", got)
 	}
 	if _, ok := parseAppearance("nope"); ok {
 		t.Fatal("accepted an unknown appearance")

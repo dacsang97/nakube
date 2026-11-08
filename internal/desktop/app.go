@@ -64,6 +64,7 @@ type App struct {
 	appearance    Appearance
 	contexts      []string
 	contextLabels []string
+	contextInfos  []cluster.ContextInfo
 	current       string
 	errText       string
 
@@ -153,12 +154,22 @@ type App struct {
 	detailCopiedUntil time.Time
 	catalogLoaded     bool
 	catalogFiles      []string
+	catalogKinds      map[string]string
+	catalogDefault    string
 	catalogErr        string
+	catalogBusy       bool
+	catalogPasteOpen  bool
+	catalogPaste      string
+
+	mobileAddress string
+	mobileErr     string
+	mobileQR      *ui.Bitmap
 
 	sidebarWidth float32
 	sideDrag     float32
 	menuQuery    string
 	railExpanded bool
+	settingsPage string
 
 	watchCancel context.CancelFunc
 }
@@ -174,6 +185,7 @@ func New(session *cluster.Session) *App {
 		router:          ui.NewRouter("/overview"),
 		selected:        "overview",
 		appearance:      DefaultAppearance(),
+		settingsPage:    "catalog",
 		pods:            map[string]*corev1.Pod{},
 		nodes:           map[string]*corev1.Node{},
 		namespaces:      map[string]*corev1.Namespace{},
@@ -248,17 +260,23 @@ func (a *App) Bootstrap(ctx context.Context) {
 }
 
 func (a *App) loadContexts() {
-	names, _, err := a.session.Contexts()
+	infos, _, err := a.session.ContextInfos()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err != nil {
 		a.errText = publicError(err)
 		a.contexts = nil
 		a.contextLabels = nil
+		a.contextInfos = nil
 		return
+	}
+	names := make([]string, len(infos))
+	for i := range infos {
+		names[i] = infos[i].Name
 	}
 	a.contexts = names
 	a.contextLabels = contextDisplayNames(names)
+	a.contextInfos = infos
 	a.current = a.session.Current()
 }
 
@@ -500,8 +518,8 @@ func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, 
 		return
 	}
 	switch {
-	case r.Match("/settings"):
-		r.Title("Settings")
+	case screenID(a.router.Path()) == "settings":
+		r.Title(a.selectedSettingsTitle())
 		a.drawSettings(c, t)
 	case r.Match("/overview"), r.Match("/"):
 		r.Title("Overview")

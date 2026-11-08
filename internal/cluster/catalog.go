@@ -89,6 +89,45 @@ func (s *Session) AddKubeconfigPath(path string) error {
 	return nil
 }
 
+// ClearKubeconfigPaths removes every additional file while preserving the
+// standard client-go loading rules.
+func (s *Session) ClearKubeconfigPaths() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.extra = nil
+	s.rebuildRulesLocked()
+}
+
+// RemoveKubeconfigPath removes a previously added file or every added file
+// beneath a folder, then rebuilds the loading precedence.
+func (s *Session) RemoveKubeconfigPath(path string) {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "." || path == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.extra[:0]
+	for _, file := range s.extra {
+		if samePath(file, path) || pathContains(path, file) {
+			continue
+		}
+		kept = append(kept, file)
+	}
+	s.extra = kept
+	s.rebuildRulesLocked()
+}
+
+func pathContains(parent, child string) bool {
+	parent, errParent := filepath.Abs(parent)
+	child, errChild := filepath.Abs(child)
+	if errParent != nil || errChild != nil {
+		return false
+	}
+	rel, err := filepath.Rel(parent, child)
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // ExtraKubeconfigs lists files added beside the default ~/.kube search.
 func (s *Session) ExtraKubeconfigs() []string {
 	s.mu.Lock()
