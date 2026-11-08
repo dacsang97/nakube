@@ -507,6 +507,10 @@ func (a *App) setNamespaceFilter(ns string) {
 	a.row = -1
 	a.nsPaletteOpen = false
 	a.nsPaletteQuery = ""
+	if a.tabs != nil {
+		// Live screens rebuild every frame; cached lists must re-fetch.
+		a.loadList(a.Selected())
+	}
 	a.invalidate()
 }
 

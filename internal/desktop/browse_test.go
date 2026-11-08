@@ -191,3 +191,18 @@ func TestLivePodsFilterByNamespace(t *testing.T) {
 		t.Fatalf("all pods rows = %+v", rows)
 	}
 }
+
+func TestSetNamespaceFilterReloadsCachedLists(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.showScreen("services", true)
+	a.mu.Lock()
+	b := a.bodies[a.active]
+	gen := b.listGen
+	a.mu.Unlock()
+	a.setNamespaceFilter("default")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if b.listGen != gen+1 {
+		t.Fatalf("changing the filter did not reload the list: gen %d -> %d", gen, b.listGen)
+	}
+}
