@@ -63,7 +63,7 @@ func (a *App) drawMain(c *ui.Context, t *ui.Theme, id string, snap listSnap) {
 		return
 	}
 	if id == "workloads" {
-		a.drawWorkloads(c, t)
+		a.drawWithSelector(c, t, a.drawWorkloads)
 		return
 	}
 	if id == "overview" || id == "" {
@@ -73,10 +73,23 @@ func (a *App) drawMain(c *ui.Context, t *ui.Theme, id string, snap listSnap) {
 		a.drawArgo(c, t, id)
 		return
 	}
-	a.drawList(c, t, id, snap)
 	if id == "helm" {
+		a.drawList(c, t, id, snap)
 		a.drawHelm(c, t)
+		return
 	}
+	a.drawWithSelector(c, t, func(c *ui.Context, t *ui.Theme) {
+		a.drawList(c, t, id, snap)
+	})
+}
+
+// drawWithSelector stacks the namespace chip row above a list screen. Only
+// namespace-scoped screens call it.
+func (a *App) drawWithSelector(c *ui.Context, t *ui.Theme, draw func(*ui.Context, *ui.Theme)) {
+	ui.Column(c).Gap(8).FillWidth().FillHeight().Children(func() {
+		a.drawNamespaceSelector(c, t)
+		draw(c, t)
+	})
 }
 
 func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSnap) {
@@ -486,6 +499,50 @@ func (a *App) fetchList(ctx context.Context, id string) ([]string, []listRow, st
 		}
 		return genericColumns(), a.filterListRows(genericListRows(rows, kind.GVR, kindLabel(kind.ID))), notice, nil
 	}
+}
+
+func (a *App) setNamespaceFilter(ns string) {
+	a.nsFilter = ns
+	a.row = -1
+	a.invalidate()
+}
+
+// drawNamespaceSelector renders the All + per-namespace chip row above list
+// screens. Namespaces come from the informer cache, sorted by name.
+func (a *App) drawNamespaceSelector(c *ui.Context, t *ui.Theme) {
+	names := make([]string, 0, len(a.namespaces))
+	for name := range a.namespaces {
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	if len(names) <= 1 {
+		return
+	}
+	ui.Row(c).Gap(4).Wrap().Padding(0, 0, 8, 0).Children(func() {
+		all := a.chip(c, t, "All", a.nsFilter == "")
+		if all.Clicked() {
+			a.setNamespaceFilter("")
+		}
+		for _, name := range names {
+			on := name == a.nsFilter
+			btn := a.chip(c, t, name, on)
+			if btn.Clicked() {
+				a.setNamespaceFilter(name)
+			}
+		}
+	})
+}
+
+func (a *App) chip(c *ui.Context, t *ui.Theme, label string, on bool) ui.Element {
+	btn := ui.Button(c, label).FontSize(11).Padding(1, 8).Radius(8)
+	if on {
+		btn.Background(t.AccentText).TextColor(t.Accent)
+	} else {
+		btn.Background(t.Surface).TextColor(t.TextMuted)
+	}
+	return btn
 }
 
 func (a *App) filterListRows(rows []listRow) []listRow {

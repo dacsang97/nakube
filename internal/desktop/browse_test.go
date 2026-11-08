@@ -107,3 +107,20 @@ func TestFilterListRows(t *testing.T) {
 		t.Fatalf("all rows = %+v", got)
 	}
 }
+
+func TestSelectNamespaceResetsRow(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.namespaces = map[string]*corev1.Namespace{
+		"default":     {ObjectMeta: metav1.ObjectMeta{Name: "default"}},
+		"kube-system": {ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}},
+	}
+	a.row = 3
+	a.setNamespaceFilter("kube-system")
+	if a.nsFilter != "kube-system" || a.row != -1 {
+		t.Fatalf("filter %q row %d", a.nsFilter, a.row)
+	}
+	a.setNamespaceFilter("")
+	if a.nsFilter != "" {
+		t.Fatalf("all filter = %q", a.nsFilter)
+	}
+}

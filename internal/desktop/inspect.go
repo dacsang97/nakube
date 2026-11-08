@@ -30,7 +30,7 @@ func (a *App) drawInspect(c *ui.Context, t *ui.Theme, id string) {
 	case "namespaces":
 		a.drawNamespaces(c, t)
 	case "events":
-		a.drawEvents(c, t)
+		a.drawWithSelector(c, t, a.drawEvents)
 	}
 }
 
