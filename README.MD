@@ -32,6 +32,7 @@ One tab per screen. A click opens a preview and replaces the previous one. A dou
 | Close | Command-W | Ctrl-W |
 | Previous / next | Command-Option-Left / Right | Ctrl-PageDown / Ctrl-PageUp |
 | Jump | Command-1–8, Command-9 last | Ctrl-1–8, Ctrl-9 last |
+| Namespace palette | Command-P | Ctrl-P |
 
 ## Checks
 
