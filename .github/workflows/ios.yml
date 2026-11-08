@@ -25,16 +25,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  swift:
-    name: Swift checks
-    runs-on: macos-15
-    timeout-minutes: 20
+  scripts:
+    name: Release script checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      # Use the image's selected full Xcode, rather than an uninstalled fixed path.
       - name: Check script syntax
         run: |
           bash -n scripts/check-swift.sh
           bash -n scripts/bump-ios-version.sh
-      - name: Compile Release for iOS Simulator
-        run: scripts/check-swift.sh

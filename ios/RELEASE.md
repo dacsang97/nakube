@@ -3,8 +3,9 @@
 The iOS release lane is independent of the desktop packaging script
 [`scripts/release.sh`](../scripts/release.sh). iOS tags begin with `ios-v`, never
 bare `v`; do not add them to a desktop GoReleaser trigger. The
-[iOS GitHub workflow](../.github/workflows/ios.yml) compiles the app but does not
-sign, upload, or create a GitHub Release. Xcode Cloud owns signed archives.
+[iOS GitHub workflow](../.github/workflows/ios.yml) checks shell script syntax
+only; it does not compile, sign, upload, or create a GitHub Release.
+Xcode Cloud owns release builds and signed archives.
 
 ## Prepare a release
 
@@ -16,7 +17,7 @@ creates an annotated iOS tag, and atomically pushes `main` and that tag to
 of `origin/main` are included in the release. It fetches the remote branch and
 tags before changing files.
 
-Run checks before releasing; the release command does not build the app:
+Optionally compile locally before releasing; the release command does not build the app:
 
 ```sh
 scripts/check-swift.sh
@@ -63,20 +64,21 @@ Cloud → Settings → Build Number** before distribution. An Admin or App Manag
 can change it. See Apple's
 [build numbering guidance](https://developer.apple.com/documentation/xcode/setting-the-next-build-number-for-xcode-cloud-builds).
 
-## Swift checks
+## Optional local Swift checks
 
 [`scripts/check-swift.sh`](../scripts/check-swift.sh) requires macOS and full
 Xcode 16 or newer with the iOS Simulator SDK installed. It compiles the shared
-`NakubeRemote` scheme in Release only, with complete Swift concurrency
+`NakubeRemote` scheme in Debug and Release, with complete Swift concurrency
 checking and Swift warnings as errors. This is a compilation check, not an
 on-device test, UI test, formatter, or archive/distribution check. No test target
 is currently configured.
 
+GitHub CI does not run this compilation script. Its iOS workflow only checks
+shell syntax on Ubuntu; release compilation is handled by Xcode Cloud.
+
 Select the Xcode installation available on your machine with `xcode-select`, or
-set `DEVELOPER_DIR` for this command. The GitHub workflow uses the selected Xcode
-on `macos-15` and prints its version rather than assuming a fixed installation
-path. Simulator checks disable code signing only for those invocations; device
-and Cloud builds keep automatic signing enabled.
+set `DEVELOPER_DIR` for this command. Local simulator checks disable code signing
+only for those invocations; device and Cloud builds keep automatic signing enabled.
 
 ## Required Xcode Cloud setup
 
@@ -90,8 +92,8 @@ team member with the necessary permissions:
    match the intended App Store Connect app. If using a different team, update
    both target build configurations and use a bundle ID registered to that team.
 2. Use **Product → Xcode Cloud → Create Workflow** to authorize this GitHub
-   repository and associate it with the iOS app. Commit the shared scheme and
-   executable `ci_scripts` hook with the project before starting a Cloud build.
+   repository and associate it with the iOS app. Commit the shared scheme with
+   the project before starting a Cloud build.
 3. Create a release workflow using this project and scheme. Select a supported
    Xcode/macOS environment (Xcode 16 or newer), add an **Archive** action for iOS
    using Release, and choose the intended distribution method. Do not inject
@@ -99,8 +101,8 @@ team member with the necessary permissions:
 4. Replace the default main-branch start condition with **Tag Changes → Custom
    Tags → Tags beginning with `ios-v`**. Do not choose Any Tag or a bare `v`
    prefix. Leave tag file/folder filters unrestricted so a build-only tag starts
-   a build even when it reuses previously built source. A separate branch/PR
-   validation workflow is optional; GitHub already runs simulator checks.
+   a build even when it reuses previously built source. Configure a separate
+   Xcode Cloud branch/PR validation workflow if pre-release compilation is needed.
 5. If distributing to testers, configure a **TestFlight** post-action and select
    the intended tester group. Complete App Store Connect's app/distribution
    prerequisites (including required app artwork and metadata) before enabling

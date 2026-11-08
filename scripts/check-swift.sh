@@ -18,15 +18,17 @@ xcrun --sdk iphonesimulator --show-sdk-version
 derived_data="$(mktemp -d "${TMPDIR:-/tmp}/nakube-swift.XXXXXX")"
 trap 'rm -rf "$derived_data"' EXIT
 
-xcodebuild \
-  -project "$root/ios/NakubeRemote/NakubeRemote.xcodeproj" \
-  -scheme NakubeRemote \
-  -configuration Release \
-  -sdk iphonesimulator \
-  -destination 'generic/platform=iOS Simulator' \
-  -derivedDataPath "$derived_data" \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGNING_REQUIRED=NO \
-  SWIFT_STRICT_CONCURRENCY=complete \
-  SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
-  build
+for configuration in Debug Release; do
+  xcodebuild \
+    -project "$root/ios/NakubeRemote/NakubeRemote.xcodeproj" \
+    -scheme NakubeRemote \
+    -configuration "$configuration" \
+    -sdk iphonesimulator \
+    -destination 'generic/platform=iOS Simulator' \
+    -derivedDataPath "$derived_data" \
+    CODE_SIGNING_ALLOWED=NO \
+    CODE_SIGNING_REQUIRED=NO \
+    SWIFT_STRICT_CONCURRENCY=complete \
+    SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+    build
+done
