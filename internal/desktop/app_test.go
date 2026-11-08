@@ -618,6 +618,7 @@ users:
 func TestSettingsCatalog(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("KUBECONFIG", filepath.Join(home, "missing"))
 	a := New(cluster.NewSession())
 	a.current = "prod"
@@ -645,6 +646,7 @@ func TestSettingsCatalog(t *testing.T) {
 func TestCatalogSourceAddAndRemovePersists(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("KUBECONFIG", filepath.Join(home, "missing"))
 	path := filepath.Join(t.TempDir(), "team.yaml")
 	body := `apiVersion: v1
@@ -696,6 +698,7 @@ users:
 func TestCatalogRemovalKeepsOverlappingSourceLoaded(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("KUBECONFIG", filepath.Join(home, "missing"))
 	dir := t.TempDir()
 	path := filepath.Join(dir, "shared.yaml")
@@ -736,6 +739,7 @@ users:
 func TestCatalogPasteImportsPrivateFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("KUBECONFIG", filepath.Join(home, "missing"))
 	a := New(cluster.NewSession())
 	body := `apiVersion: v1
@@ -782,6 +786,7 @@ users:
 func TestEnsureCatalogKeepsPersistedFiles(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 	kubeconfig := filepath.Join(dir, "extra.yaml")
 	fixture := `apiVersion: v1
 kind: Config
