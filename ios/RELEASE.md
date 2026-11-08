@@ -1,7 +1,7 @@
 # iOS releases
 
 The iOS release lane is independent of the desktop packaging script
-[`scripts/release.sh`](../scripts/release.sh). iOS tags begin with `ios/v`, never
+[`scripts/release.sh`](../scripts/release.sh). iOS tags begin with `ios-v`, never
 bare `v`; do not add them to a desktop GoReleaser trigger. The
 [iOS GitHub workflow](../.github/workflows/ios.yml) compiles the app but does not
 sign, upload, or create a GitHub Release. Xcode Cloud owns signed archives.
@@ -22,7 +22,7 @@ scripts/check-swift.sh
 
 Review the version diff and checks, then use the printed commands. Push only the
 explicit iOS tag, not `--tags` or `--follow-tags`, so an unrelated desktop tag
-cannot start a desktop release. A version release uses `ios/v1.2.3`. To release
+cannot start a desktop release. A version release uses `ios-v1.2.3`. To release
 another source build of the same marketing version:
 
 ```sh
@@ -31,7 +31,7 @@ scripts/bump-ios-version.sh --build-only
 ```
 
 Build-only tags include the incremented source build, such as
-`ios/v1.2.3-build.3`. The tag must point to the commit containing the version
+`ios-v1.2.3-build.3`. The tag must point to the commit containing the version
 settings, not to its parent. Repeated dry runs do not change any file.
 
 ### Source build versus distributed build
@@ -42,7 +42,7 @@ local builds and source/tag identity. It is **not a reservation of an Xcode
 Cloud build number**.
 
 Xcode Cloud automatically assigns the distributed `CFBundleVersion` from its
-own increasing `CI_BUILD_NUMBER`. For example, tag `ios/v1.2.3-build.3` can produce
+own increasing `CI_BUILD_NUMBER`. For example, tag `ios-v1.2.3-build.3` can produce
 TestFlight `1.2.3 (42)`. Rebuilding the same tag receives another Cloud build
 number. Keep Cloud numbering authoritative; do not overwrite it with the source
 counter or use a tag suffix as the uploaded build number.
@@ -87,7 +87,7 @@ team member with the necessary permissions:
    using Release, and choose the intended distribution method. Do not inject
    `CODE_SIGNING_ALLOWED=NO` or copy the simulator command's signing settings.
 4. Replace the default main-branch start condition with **Tag Changes → Custom
-   Tags → Tags beginning with `ios/v`**. Do not choose Any Tag or a bare `v`
+   Tags → Tags beginning with `ios-v`**. Do not choose Any Tag or a bare `v`
    prefix. Leave tag file/folder filters unrestricted so a build-only tag starts
    a build even when it reuses previously built source. A separate branch/PR
    validation workflow is optional; GitHub already runs simulator checks.
@@ -96,7 +96,7 @@ team member with the necessary permissions:
    prerequisites (including required app artwork and metadata) before enabling
    uploads. A successful unsigned GitHub build does not prove signing or
    TestFlight readiness. No Apple credentials are needed in GitHub Actions.
-6. Push the release commit and its explicit `ios/v…` tag using the reviewed
+6. Push the release commit and its explicit `ios-v…` tag using the reviewed
    commands. In Cloud, confirm the selected tag and the Archive result. For
    TestFlight, correlate the uploaded build with the Cloud run using
    `CI_BUILD_NUMBER`, not the source build counter.

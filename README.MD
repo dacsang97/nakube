@@ -76,7 +76,7 @@ Xcode 16+ automatically includes Swift files through a filesystem-synchronized a
 
 `scripts/release.sh` stops unless `MACOS_SIGNING_IDENTITY` and `NOTARY_KEYCHAIN_PROFILE` are set. It does not commit signing fields or store an Apple password. Windows stays unsigned. Linux keeps `webview` false, so the package does not pull WebKitGTK.
 
-For iOS version/tag releases, Swift checks, and the Xcode Cloud tag-trigger setup, see [`ios/RELEASE.md`](ios/RELEASE.md). iOS tags use `ios/v…`, separate from desktop releases.
+For iOS version/tag releases, Swift checks, and the Xcode Cloud tag-trigger setup, see [`ios/RELEASE.md`](ios/RELEASE.md). iOS tags use `ios-v…`, separate from desktop releases.
 
 ## MCP
 

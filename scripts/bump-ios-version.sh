@@ -48,7 +48,7 @@ begin
     raise "Refusing to lower marketing version from #{current_version} to #{version}"
   end
   build = Integer(builds.first, 10) + 1
-  tag = requested ? "ios/v#{version}" : "ios/v#{version}-build.#{build}"
+  tag = requested ? "ios-v#{version}" : "ios-v#{version}-build.#{build}"
   exists = system("git", "-C", root, "show-ref", "--verify", "--quiet", "refs/tags/#{tag}")
   raise "Tag #{tag} already exists; use --build-only for another build" if exists
   raise "Cannot inspect local tags" unless $?.exitstatus == 1

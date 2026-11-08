@@ -3,7 +3,7 @@ name: iOS
 on:
   push:
     branches: [main]
-    tags: ['ios/v*']
+    tags: ['ios-v*']
     paths:
       - 'ios/**'
       - 'scripts/check-swift.sh'
