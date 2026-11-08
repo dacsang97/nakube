@@ -67,7 +67,7 @@ can change it. See Apple's
 
 [`scripts/check-swift.sh`](../scripts/check-swift.sh) requires macOS and full
 Xcode 16 or newer with the iOS Simulator SDK installed. It compiles the shared
-`NakubeRemote` scheme in Debug and Release, with complete Swift concurrency
+`NakubeRemote` scheme in Release only, with complete Swift concurrency
 checking and Swift warnings as errors. This is a compilation check, not an
 on-device test, UI test, formatter, or archive/distribution check. No test target
 is currently configured.
