@@ -62,12 +62,29 @@ type Pod struct {
 
 // Overview matches the desktop cards, including the empty metrics state.
 type Overview struct {
-	Context  string `json:"context"`
-	Nodes    string `json:"nodes"`
-	Pods     string `json:"pods"`
-	Warnings string `json:"warnings"`
-	CPU      string `json:"cpu"`
-	Memory   string `json:"memory"`
+	Context  string          `json:"context"`
+	Nodes    string          `json:"nodes"`
+	Pods     string          `json:"pods"`
+	Warnings string          `json:"warnings"`
+	CPU      string          `json:"cpu"`
+	Memory   string          `json:"memory"`
+	Charts   *OverviewCharts `json:"charts,omitempty"`
+}
+
+// ResourceReading keeps an unavailable metric distinct from a measured zero.
+type ResourceReading struct {
+	Used        *int64 `json:"used"`
+	Allocatable int64  `json:"allocatable"`
+}
+
+// OverviewCharts contains numeric observations, never parsed display strings.
+type OverviewCharts struct {
+	NodesReady  int             `json:"nodesReady"`
+	NodesTotal  int             `json:"nodesTotal"`
+	PodsRunning int             `json:"podsRunning"`
+	PodsTotal   int             `json:"podsTotal"`
+	CPU         ResourceReading `json:"cpu"`
+	Memory      ResourceReading `json:"memory"`
 }
 
 // ArgoApp is the phone Argo row. It has no operation the phone could post back.
@@ -78,8 +95,17 @@ type ArgoApp struct {
 	Health    string `json:"health"`
 }
 
+// Context is a credential-free row in the mobile context catalog.
+type Context struct {
+	Name    string `json:"name"`
+	Cluster string `json:"cluster"`
+	Current bool   `json:"current"`
+}
+
 // Backend is the desktop session surface the phone may call.
 type Backend interface {
+	Contexts(ctx context.Context) ([]Context, error)
+	ContextOverview(ctx context.Context, name string) (Overview, error)
 	Overview(ctx context.Context) (Overview, error)
 	Pods(ctx context.Context) ([]Pod, error)
 	Logs(ctx context.Context, namespace, name, container string) (io.ReadCloser, error)
@@ -91,7 +117,16 @@ type Backend interface {
 // Handler serves the phone routes. Sync, apply, exec, and Helm are absent.
 func Handler(b Backend) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/contexts", func(w http.ResponseWriter, r *http.Request) {
+		body, err := b.Contexts(r.Context())
+		writeJSON(w, body, err)
+	})
 	mux.HandleFunc("GET /v1/overview", func(w http.ResponseWriter, r *http.Request) {
+		if name := r.URL.Query().Get("context"); name != "" {
+			body, err := b.ContextOverview(r.Context(), name)
+			writeJSON(w, body, err)
+			return
+		}
 		body, err := b.Overview(r.Context())
 		writeJSON(w, body, err)
 	})
