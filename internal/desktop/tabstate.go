@@ -52,6 +52,7 @@ type tabBody struct {
 	pruneSync   bool
 
 	listGen     int
+	nsFilter    string
 	listID      string
 	listLoading bool
 	listErr     string
@@ -194,6 +195,7 @@ func saveInto(a *App, b *tabBody) {
 	b.helmRelease = a.helmRelease
 	b.helmChart = a.helmChart
 	b.helmNamespace = a.helmNamespace
+	b.nsFilter = a.nsFilter
 	b.helmValues = a.helmValues
 	b.helmDiff = a.helmDiff
 	b.helmBusy = a.helmBusy
@@ -253,6 +255,7 @@ func loadFrom(a *App, b *tabBody) {
 	a.helmRelease = b.helmRelease
 	a.helmChart = b.helmChart
 	a.helmNamespace = b.helmNamespace
+	a.nsFilter = b.nsFilter
 	a.helmValues = b.helmValues
 	a.helmDiff = b.helmDiff
 	a.helmBusy = b.helmBusy

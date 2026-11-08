@@ -135,6 +135,7 @@ type App struct {
 	argoClustersReady bool
 
 	listGen           int
+	nsFilter          string
 	listID            string
 	listLoading       bool
 	listErr           string
