@@ -147,3 +147,27 @@ func TestNamespacePaletteFilter(t *testing.T) {
 		t.Fatal("applying a namespace left the palette open")
 	}
 }
+
+func TestNamespaceSelectOptions(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.namespaces = map[string]*corev1.Namespace{
+		"monitoring":  {ObjectMeta: metav1.ObjectMeta{Name: "monitoring"}},
+		"kube-system": {ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}},
+	}
+	opts := a.namespaceSelectOptions()
+	if len(opts) != 3 || opts[0] != "All namespaces" || opts[1] != "kube-system" {
+		t.Fatalf("options = %v", opts)
+	}
+	if got := a.filterForSelection("All namespaces"); got != "" {
+		t.Fatalf("All maps to %q", got)
+	}
+	if got := a.filterForSelection("monitoring"); got != "monitoring" {
+		t.Fatalf("selection maps to %q", got)
+	}
+	if got := a.selectionForFilter(""); got != "All namespaces" {
+		t.Fatalf("empty filter shows %q", got)
+	}
+	if got := a.selectionForFilter("monitoring"); got != "monitoring" {
+		t.Fatalf("filter shows %q", got)
+	}
+}

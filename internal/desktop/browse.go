@@ -571,42 +571,58 @@ func (a *App) drawNamespacePalette(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-// drawNamespaceSelector renders the All + per-namespace chip row above list
-// screens. Namespaces come from the informer cache, sorted by name.
-func (a *App) drawNamespaceSelector(c *ui.Context, t *ui.Theme) {
-	names := make([]string, 0, len(a.namespaces))
-	for name := range a.namespaces {
+// namespaceSelectOptions builds the dropdown options: All followed by the
+// sorted namespace names.
+func (a *App) namespaceSelectOptions() []string {
+	opts := make([]string, 0, len(a.namespaces)+1)
+	opts = append(opts, allNamespacesLabel)
+	opts = append(opts, namespaceNames(a.namespaces)...)
+	return opts
+}
+
+func namespaceNames(namespaces map[string]*corev1.Namespace) []string {
+	names := make([]string, 0, len(namespaces))
+	for name := range namespaces {
 		if name != "" {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
+	return names
+}
+
+const allNamespacesLabel = "All namespaces"
+
+func (a *App) filterForSelection(selection string) string {
+	if selection == "" || selection == allNamespacesLabel {
+		return ""
+	}
+	return selection
+}
+
+func (a *App) selectionForFilter(filter string) string {
+	if filter == "" {
+		return allNamespacesLabel
+	}
+	return filter
+}
+
+// drawNamespaceSelector renders the Lens-style namespace dropdown above list
+// screens. Namespaces come from the informer cache, sorted by name.
+func (a *App) drawNamespaceSelector(c *ui.Context, t *ui.Theme) {
+	names := namespaceNames(a.namespaces)
 	if len(names) <= 1 {
 		return
 	}
-	ui.Row(c).Gap(4).Wrap().Padding(0, 0, 8, 0).Children(func() {
-		all := a.chip(c, t, "All", a.nsFilter == "")
-		if all.Clicked() {
-			a.setNamespaceFilter("")
-		}
-		for _, name := range names {
-			on := name == a.nsFilter
-			btn := a.chip(c, t, name, on)
-			if btn.Clicked() {
-				a.setNamespaceFilter(name)
-			}
+	opts := append([]string{allNamespacesLabel}, names...)
+	sel := a.selectionForFilter(a.nsFilter)
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(0, 0, 8, 0).Children(func() {
+		ui.Text(c, "Namespace").FontSize(12).TextColor(t.TextMuted)
+		chosen := sel
+		if ui.Combobox(c, &chosen, opts).Changed() {
+			a.setNamespaceFilter(a.filterForSelection(chosen))
 		}
 	})
-}
-
-func (a *App) chip(c *ui.Context, t *ui.Theme, label string, on bool) ui.Element {
-	btn := ui.Button(c, label).FontSize(11).Padding(1, 8).Radius(8)
-	if on {
-		btn.Background(t.AccentText).TextColor(t.Accent)
-	} else {
-		btn.Background(t.Surface).TextColor(t.TextMuted)
-	}
-	return btn
 }
 
 func (a *App) filterListRows(rows []listRow) []listRow {
