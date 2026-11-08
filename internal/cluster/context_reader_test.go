@@ -10,7 +10,7 @@ import (
 func TestForContextDoesNotSwitchDesktop(t *testing.T) {
 	dir := t.TempDir()
 	config := filepath.Join(dir, "config")
-	if err := os.WriteFile(config, []byte(twoContextKubeconfig), 0600); err != nil {
+	if err := os.WriteFile(config, []byte(twoContextKubeconfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("KUBECONFIG", config)

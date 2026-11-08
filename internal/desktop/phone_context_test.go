@@ -33,7 +33,7 @@ func TestPhoneContextOverviewUsesSelectedCluster(t *testing.T) {
 	dir := t.TempDir()
 	config := fmt.Sprintf("apiVersion: v1\nkind: Config\ncurrent-context: desktop\ncontexts:\n- name: desktop\n  context:\n    cluster: offline\n- name: mobile/team\n  context:\n    cluster: live\nclusters:\n- name: offline\n  cluster:\n    server: http://127.0.0.1:1\n- name: live\n  cluster:\n    server: %s\n", kube.URL)
 	path := filepath.Join(dir, "config")
-	if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("KUBECONFIG", path)

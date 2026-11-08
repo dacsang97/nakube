@@ -4,10 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/dacsang97/nakube/internal/remote"
-	"github.com/dacsang97/nakube/internal/views/overview"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/dacsang97/nakube/internal/remote"
+	"github.com/dacsang97/nakube/internal/views/overview"
 )
 
 func (p Phone) Contexts(ctx context.Context) ([]remote.Context, error) {
