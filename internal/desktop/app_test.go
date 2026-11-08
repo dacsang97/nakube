@@ -755,3 +755,71 @@ func TestPublicErrorHidesToken(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+func TestRailExpandedShowsShortNames(t *testing.T) {
+	exact := func(tt *ui.Tester, want string) bool {
+		for _, text := range tt.Texts() {
+			if text == want {
+				return true
+			}
+		}
+		return false
+	}
+	a := New(cluster.NewSession())
+	a.contexts = []string{"arn:aws:eks:ap-southeast-1:123456789012:cluster/prod", "kind-local"}
+	a.current = "kind-local"
+	tt := ui.NewTester(a.view, 1100, 720)
+	if exact(tt, "prod") || exact(tt, "Collapse contexts") {
+		t.Fatalf("compact rail drew context names, texts %q", tt.Texts())
+	}
+
+	a = New(cluster.NewSession())
+	a.contexts = []string{"arn:aws:eks:ap-southeast-1:123456789012:cluster/prod", "kind-local"}
+	a.current = "kind-local"
+	a.railExpanded = true
+	tt = ui.NewTester(a.view, 1100, 720)
+	for _, want := range []string{"prod", "kind-local", "Settings", "Collapse contexts"} {
+		if !exact(tt, want) {
+			t.Fatalf("expanded rail misses %q, texts %q", want, tt.Texts())
+		}
+	}
+	if _, ok := tt.Find("arn:aws:eks:ap-southeast-1:123456789012:cluster/prod"); !ok {
+		t.Fatalf("expanded row lost its full-name label")
+	}
+}
+
+func TestRailToggleSavesState(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	a := New(cluster.NewSession())
+	a.contexts = []string{"dev"}
+	a.current = "dev"
+	a.router.Push("/pods")
+	tt := ui.NewTester(a.view, 1100, 720)
+	if err := tt.Click("Expand contexts"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.railExpanded {
+		t.Fatal("click did not expand the rail")
+	}
+	if got := a.router.Path(); got != "/pods" {
+		t.Fatalf("toggle moved the router to %q", got)
+	}
+	path, err := railPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !readRail(path) {
+		t.Fatal("expanded state not saved")
+	}
+	b := New(cluster.NewSession())
+	b.RestoreRail()
+	if !b.railExpanded {
+		t.Fatal("restore lost the expanded state")
+	}
+	a.toggleRail()
+	if readRail(path) {
+		t.Fatal("collapsed state not saved")
+	}
+}

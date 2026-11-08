@@ -157,6 +157,7 @@ type App struct {
 	sidebarWidth float32
 	sideDrag     float32
 	menuQuery    string
+	railExpanded bool
 
 	watchCancel context.CancelFunc
 }
@@ -477,6 +478,7 @@ func (a *App) view(c *ui.Context) {
 		a.drawDetailPanel(c, t)
 	})
 	a.tabKeys(shell)
+	a.railKeys(shell)
 }
 
 func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, confirm *Confirm, shown overview.Snapshot, samples []overview.Sample, wait overview.Wait) {
