@@ -27,6 +27,16 @@ type fakeBackend struct {
 	logsContainer string
 }
 
+func (f *fakeBackend) Contexts(context.Context) ([]Context, error) {
+	return []Context{{Name: "dev", Cluster: "development", Current: true}}, nil
+}
+
+func (f *fakeBackend) ContextOverview(ctx context.Context, name string) (Overview, error) {
+	body, err := f.Overview(ctx)
+	body.Context = name
+	return body, err
+}
+
 func (f *fakeBackend) Overview(context.Context) (Overview, error) {
 	return Overview{Context: "dev", Nodes: "1/1", Pods: "2/3", Warnings: "0", CPU: "metrics unavailable", Memory: "metrics unavailable"}, nil
 }

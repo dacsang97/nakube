@@ -1,16 +1,22 @@
 // !$*UTF8*$!
 {
 	archiveVersion = 1;
-	classes = {};
-	objectVersion = 56;
+	classes = {
+	};
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXFileReference section */
 		A10000000000000000000001 /* NakubeRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NakubeRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A10000000000000000000002 /* NakubeRemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NakubeRemoteApp.swift; sourceTree = "<group>"; };
-		A10000000000000000000003 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		A10000000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A10000000000000000000021 /* NakubeRemote */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NakubeRemote;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A10000000000000000000010 /* Frameworks */ = {
@@ -29,16 +35,6 @@
 				A10000000000000000000021 /* NakubeRemote */,
 				A10000000000000000000022 /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		A10000000000000000000021 /* NakubeRemote */ = {
-			isa = PBXGroup;
-			children = (
-				A10000000000000000000002 /* NakubeRemoteApp.swift */,
-				A10000000000000000000003 /* ContentView.swift */,
-				A10000000000000000000004 /* Info.plist */,
-			);
-			path = NakubeRemote;
 			sourceTree = "<group>";
 		};
 		A10000000000000000000022 /* Products */ = {
@@ -63,6 +59,9 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000021 /* NakubeRemote */,
+			);
 			name = NakubeRemote;
 			productName = NakubeRemote;
 			productReference = A10000000000000000000001 /* NakubeRemote.app */;
@@ -78,7 +77,6 @@
 				LastUpgradeCheck = 1600;
 			};
 			buildConfigurationList = A10000000000000000000042 /* Build configuration list for PBXProject "NakubeRemote" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -86,6 +84,7 @@
 				Base,
 			);
 			mainGroup = A10000000000000000000020;
+			preferredProjectObjectVersion = 77;
 			productRefGroup = A10000000000000000000022 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -100,17 +99,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10000000000000000000032 /* NakubeRemoteApp.swift in Sources */,
-				A10000000000000000000033 /* ContentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXBuildFile section */
-		A10000000000000000000032 /* NakubeRemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* NakubeRemoteApp.swift */; };
-		A10000000000000000000033 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* ContentView.swift */; };
-/* End PBXBuildFile section */
 
 /* Begin XCBuildConfiguration section */
 		A10000000000000000000050 /* Debug */ = {
@@ -143,8 +135,9 @@
 		A10000000000000000000052 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 84TN3ZC4W8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NakubeRemote/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NaKube;
@@ -154,6 +147,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.gnas.nakube.remote;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -164,8 +158,9 @@
 		A10000000000000000000053 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 84TN3ZC4W8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NakubeRemote/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NaKube;
@@ -175,6 +170,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.gnas.nakube.remote;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;

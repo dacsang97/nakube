@@ -32,15 +32,9 @@ func (p Phone) Overview(context.Context) (remote.Overview, error) {
 	a.mu.Lock()
 	shown := overview.From(a.nodes, a.pods, a.events, a.usage, a.usageErr, time.Now())
 	current := a.session.Current()
+	body := phoneOverview(current, shown, a.usage)
 	a.mu.Unlock()
-	return remote.Overview{
-		Context:  current,
-		Nodes:    shown.NodesText(),
-		Pods:     shown.PodsText(),
-		Warnings: shown.WarningsText(),
-		CPU:      shown.CPU,
-		Memory:   shown.Memory,
-	}, nil
+	return body, nil
 }
 
 func (p Phone) Pods(ctx context.Context) ([]remote.Pod, error) {
