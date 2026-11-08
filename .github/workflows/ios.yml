@@ -36,12 +36,5 @@ jobs:
         run: |
           bash -n scripts/check-swift.sh
           bash -n scripts/bump-ios-version.sh
-          bash -n ios/NakubeRemote/ci_scripts/ci_post_clone.sh
-      - name: Validate iOS tag identity
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          CI_TAG: ${{ github.ref_name }}
-          CI_PRIMARY_REPOSITORY_PATH: ${{ github.workspace }}
-        run: ios/NakubeRemote/ci_scripts/ci_post_clone.sh
       - name: Compile Debug and Release for iOS Simulator
         run: scripts/check-swift.sh

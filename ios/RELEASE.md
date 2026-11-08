@@ -45,9 +45,7 @@ Xcode Cloud automatically assigns the distributed `CFBundleVersion` from its
 own increasing `CI_BUILD_NUMBER`. For example, tag `ios/v1.2.3-build.3` can produce
 TestFlight `1.2.3 (42)`. Rebuilding the same tag receives another Cloud build
 number. Keep Cloud numbering authoritative; do not overwrite it with the source
-counter or use a tag suffix as the uploaded build number. The
-[post-clone hook](NakubeRemote/ci_scripts/ci_post_clone.sh) validates tag identity
-and logs both numbers without modifying either.
+counter or use a tag suffix as the uploaded build number.
 
 If this app already has distributed builds of the same marketing version,
 choose an unused next Cloud build number in **App Store Connect → app → Xcode
@@ -99,10 +97,8 @@ team member with the necessary permissions:
    uploads. A successful unsigned GitHub build does not prove signing or
    TestFlight readiness. No Apple credentials are needed in GitHub Actions.
 6. Push the release commit and its explicit `ios/v…` tag using the reviewed
-   commands. In Cloud, confirm the post-clone log's marketing version/tag and
-   the Archive result. For TestFlight, correlate the uploaded build with the
-   Cloud run using `CI_BUILD_NUMBER`, not the source build counter.
+   commands. In Cloud, confirm the selected tag and the Archive result. For
+   TestFlight, correlate the uploaded build with the Cloud run using
+   `CI_BUILD_NUMBER`, not the source build counter.
 
-Cloud discovers the hook beside the project automatically. See Apple's
-[custom build script conventions](https://developer.apple.com/documentation/xcode/writing-custom-build-scripts)
-and [tag start conditions](https://developer.apple.com/documentation/xcode/configuring-start-conditions).
+See Apple's [tag start conditions](https://developer.apple.com/documentation/xcode/configuring-start-conditions).
