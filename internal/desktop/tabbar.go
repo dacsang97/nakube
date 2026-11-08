@@ -295,6 +295,10 @@ func (a *App) syncRouter(screen string) {
 }
 
 func (a *App) tabKeys(e ui.Element) {
+	paletteMods := ui.Ctrl
+	if runtime.GOOS == "darwin" {
+		paletteMods = ui.Cmd
+	}
 	nextMods, nextKey := ui.Ctrl, ui.KeyPageUp
 	prevMods, prevKey := ui.Ctrl, ui.KeyPageDown
 	if runtime.GOOS == "darwin" {
@@ -302,6 +306,10 @@ func (a *App) tabKeys(e ui.Element) {
 		prevMods, prevKey = ui.Cmd|ui.Alt, ui.KeyLeft
 	}
 	switch {
+	case namespaceScopedScreen(a.Selected()) && e.Shortcut(paletteMods, ui.KeyP):
+		a.nsPaletteOpen = !a.nsPaletteOpen
+		a.nsPaletteQuery = ""
+		a.invalidate()
 	case e.Shortcut(ui.Cmd, ui.KeyW):
 		a.closeTab(a.tabs.Selected())
 	case e.Shortcut(nextMods, nextKey):

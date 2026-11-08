@@ -20,11 +20,11 @@ func TestDrawShowsWarningObjectAndMessage(t *testing.T) {
 		InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "api"},
 		Count:          3,
 	}
-	page := Build([]*corev1.Event{item}, "", ColAge, true, now)
+	page := Build([]*corev1.Event{item}, "", ColAge, true, now, "")
 	query := ""
 	selected := 0
 	tt := ui.NewTester(func(c *ui.Context) {
-		Draw(c, c.Theme(), page, &query, &ui.ListState{Selected: &selected}, false)
+		Draw(c, c.Theme(), page, &query, &ui.ListState{Selected: &selected}, false, nil)
 	}, 1100, 700)
 	for _, want := range []string{"Events", "Warning", "Failed", "Pod/api", "secret-token was not found", "3"} {
 		if !tt.HasText(want) {

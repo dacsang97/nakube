@@ -107,6 +107,20 @@ func TestShowScreenKeepsRow(t *testing.T) {
 	}
 }
 
+func TestTabSwitchKeepsNamespaceFilter(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.showScreen("pods", false)
+	a.nsFilter = "kube-system"
+	a.showScreen("nodes", true)
+	if a.nsFilter != "" {
+		t.Fatalf("new tab inherited namespace filter %q", a.nsFilter)
+	}
+	a.showScreen("pods", true)
+	if a.nsFilter != "kube-system" {
+		t.Fatalf("pods tab lost its namespace filter %q", a.nsFilter)
+	}
+}
+
 func TestPreviewClickReplacesUnpinnedTab(t *testing.T) {
 	a := New(cluster.NewSession())
 	a.showScreen("pods", true)

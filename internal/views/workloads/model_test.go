@@ -22,7 +22,7 @@ func TestBuildNormalizesWorkloadHealth(t *testing.T) {
 		&batchv1.CronJob{ObjectMeta: metav1.ObjectMeta{Name: "cleanup", Namespace: "ops"}},
 	}
 
-	page := Build(objects, "", 0, ColKind, false)
+	page := Build(objects, "", 0, ColKind, false, "")
 	if page.Total != 5 || page.Healthy != 3 || page.Active != 1 || page.Attention != 1 {
 		t.Fatalf("summary = total %d healthy %d active %d attention %d", page.Total, page.Healthy, page.Active, page.Attention)
 	}
@@ -39,7 +39,7 @@ func TestBuildFiltersSearchAndAttention(t *testing.T) {
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "prod"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}},
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "broken", Namespace: "prod"}, Status: corev1.PodStatus{Phase: corev1.PodFailed}},
 	}
-	page := Build(objects, "BROK", 3, ColName, false)
+	page := Build(objects, "BROK", 3, ColName, false, "")
 	if len(page.Rows) != 1 || page.Rows[0].Name != "broken" || page.Total != 2 {
 		t.Fatalf("filtered page = %+v", page)
 	}
@@ -55,8 +55,44 @@ func TestDeploymentFailureConditionWinsOverReplicaCount(t *testing.T) {
 			Conditions:    []appsv1.DeploymentCondition{{Type: appsv1.DeploymentReplicaFailure, Status: corev1.ConditionTrue}},
 		},
 	}
-	page := Build([]runtime.Object{deployment}, "", 0, "", false)
+	page := Build([]runtime.Object{deployment}, "", 0, "", false, "")
 	if len(page.Rows) != 1 || page.Rows[0].Status != StatusFailed || page.Attention != 1 {
 		t.Fatalf("page = %+v", page)
+	}
+}
+
+func TestBuildNamespaceFilter(t *testing.T) {
+	two := int32(2)
+	objects := []runtime.Object{
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "ns-a"}, Spec: appsv1.DeploymentSpec{Replicas: &two}, Status: appsv1.DeploymentStatus{ReadyReplicas: 1}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "ns-b"}},
+	}
+	page := Build(objects, "", 0, ColKind, false, "ns-a")
+	if len(page.Rows) != 1 || page.Total != 1 || page.Rows[0].Name != "web" {
+		t.Fatalf("namespace page = %+v", page)
+	}
+	if page.Ready != 1 || page.Desired != 2 {
+		t.Fatalf("counters counted other namespaces: %d/%d", page.Ready, page.Desired)
+	}
+}
+
+func TestBuildNamespaceAll(t *testing.T) {
+	objects := []runtime.Object{
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "ns-a"}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "ns-b"}},
+	}
+	page := Build(objects, "", 0, ColKind, false, "")
+	if len(page.Rows) != 2 || page.Total != 2 {
+		t.Fatalf("all-namespaces page = %+v", page)
+	}
+}
+
+func TestBuildNamespaceMissing(t *testing.T) {
+	objects := []runtime.Object{
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "ns-a"}},
+	}
+	page := Build(objects, "", 0, ColKind, false, "gone")
+	if len(page.Rows) != 0 || page.Total != 0 {
+		t.Fatalf("missing namespace page = %+v", page)
 	}
 }

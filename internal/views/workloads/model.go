@@ -110,11 +110,11 @@ type Page struct {
 	Desired   int32
 }
 
-func Build(objects []runtime.Object, query string, filter int, sortBy string, descending bool) Page {
+func Build(objects []runtime.Object, query string, filter int, sortBy string, descending bool, namespace string) Page {
 	page := Page{Kinds: kindSummaries()}
 	for _, object := range objects {
 		row, ok := normalize(object)
-		if !ok {
+		if !ok || namespace != "" && row.Namespace != namespace {
 			continue
 		}
 		page.Total++

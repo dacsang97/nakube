@@ -53,7 +53,7 @@ type Row struct {
 // Build lists events. column empty sorts by last seen, newest first, because
 // an event name is not a useful order. A missing last time uses the series
 // time, then the event time, then the first time.
-func Build(items []*corev1.Event, query, column string, desc bool, now time.Time) Page {
+func Build(items []*corev1.Event, query, column string, desc bool, now time.Time, namespace string) Page {
 	if column == "" {
 		column = ColAge
 		desc = true
@@ -61,7 +61,7 @@ func Build(items []*corev1.Event, query, column string, desc bool, now time.Time
 	rows := make([]Row, 0, len(items))
 	total := 0
 	for _, item := range items {
-		if item == nil {
+		if item == nil || namespace != "" && item.Namespace != namespace {
 			continue
 		}
 		total++

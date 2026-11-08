@@ -73,10 +73,29 @@ func (a *App) drawMain(c *ui.Context, t *ui.Theme, id string, snap listSnap) {
 		a.drawArgo(c, t, id)
 		return
 	}
-	a.drawList(c, t, id, snap)
 	if id == "helm" {
+		a.drawList(c, t, id, snap)
 		a.drawHelm(c, t)
+		return
 	}
+	a.drawList(c, t, id, snap)
+}
+
+func namespaceScopedScreen(id string) bool {
+	switch id {
+	case "workloads", "events":
+		return true
+	case "", "overview", "nodes", "namespaces", "helm", "port-forwards", "settings", "catalog":
+		return false
+	}
+	if isArgoScreen(id) {
+		return false
+	}
+	if strings.HasPrefix(id, "istio-") || workloadKind(id).Kind != "" {
+		return true
+	}
+	_, ok := LookupKind(id)
+	return ok
 }
 
 func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSnap) {
@@ -88,19 +107,24 @@ func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSna
 	for i, row := range snap.rows {
 		rows[i] = resource.Row{Kind: row.Identity.Kind, Name: row.Name, Cells: row.Cells}
 	}
+	var headerControl func(*ui.Context, *ui.Theme)
+	if namespaceScopedScreen(selected) {
+		headerControl = a.drawNamespaceSelector
+	}
 	list := resource.List{
-		Title:    labelFor(selected),
-		Err:      snap.err,
-		Notice:   snap.notice,
-		Empty:    emptyText(selected),
-		Loading:  snap.loading,
-		Columns:  cols,
-		Rows:     rows,
-		Selected: &a.row,
-		ScaleTo:  &a.scaleTo,
-		Local:    &a.forwardLocal,
-		Remote:   &a.forwardRemote,
-		Revision: &a.rollbackRev,
+		Title:         labelFor(selected),
+		Err:           snap.err,
+		Notice:        snap.notice,
+		Empty:         emptyText(selected),
+		Loading:       snap.loading,
+		Columns:       cols,
+		Rows:          rows,
+		Selected:      &a.row,
+		ScaleTo:       &a.scaleTo,
+		Local:         &a.forwardLocal,
+		Remote:        &a.forwardRemote,
+		Revision:      &a.rollbackRev,
+		HeaderControl: headerControl,
 		OnAction: func(index int, action string) {
 			if index < 0 || index >= len(snap.rows) {
 				return
@@ -385,6 +409,8 @@ func (a *App) loadList(id string) {
 		}
 		a.bodies[tabID] = b
 	}
+	namespace := a.nsFilter
+	b.nsFilter = namespace
 	b.listGen++
 	gen := b.listGen
 	b.listID = id
@@ -402,7 +428,7 @@ func (a *App) loadList(id string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		cols, rows, notice, err := a.fetchList(ctx, id)
+		cols, rows, notice, err := a.fetchList(ctx, id, namespace)
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		b := a.bodies[tabID]
@@ -451,7 +477,8 @@ func (a *App) liveRowsLocked(id string) ([]string, []listRow) {
 	case "workloads":
 		return nil, nil
 	case "pods":
-		return podTable(a.pods)
+		cols, rows := podTable(a.pods)
+		return cols, filterListRows(rows, a.nsFilter)
 	case "port-forwards":
 		return forwardTable(a.forwards)
 	default:
@@ -459,7 +486,7 @@ func (a *App) liveRowsLocked(id string) ([]string, []listRow) {
 	}
 }
 
-func (a *App) fetchList(ctx context.Context, id string) ([]string, []listRow, string, error) {
+func (a *App) fetchList(ctx context.Context, id, namespace string) ([]string, []listRow, string, error) {
 	switch {
 	case id == "helm":
 		rels, err := a.session.HelmList(ctx)
@@ -468,9 +495,9 @@ func (a *App) fetchList(ctx context.Context, id string) ([]string, []listRow, st
 		}
 		return helmRows(rels)
 	case strings.HasPrefix(id, "istio-"):
-		return a.istioRows(ctx, id)
+		return a.istioRows(ctx, id, namespace)
 	case workloadKind(id).Kind != "":
-		return a.genericRows(ctx, workloadKind(id), "")
+		return a.genericRows(ctx, workloadKind(id), "", namespace)
 	default:
 		kind, ok := LookupKind(id)
 		if !ok {
@@ -484,11 +511,149 @@ func (a *App) fetchList(ctx context.Context, id string) ([]string, []listRow, st
 			}
 			return nil, nil, "", err
 		}
-		return genericColumns(), genericListRows(rows, kind.GVR, kindLabel(kind.ID)), notice, nil
+		return genericColumns(), filterListRows(genericListRows(rows, kind.GVR, kindLabel(kind.ID)), namespace), notice, nil
 	}
 }
 
-func (a *App) genericRows(ctx context.Context, kind namedKind, missing string) ([]string, []listRow, string, error) {
+func (a *App) setNamespaceFilter(ns string) {
+	a.nsFilter = ns
+	a.row = -1
+	a.nsPaletteOpen = false
+	a.nsPaletteQuery = ""
+	if a.tabs != nil {
+		// Live screens rebuild every frame; cached lists must re-fetch.
+		a.loadList(a.Selected())
+	}
+	a.invalidate()
+}
+
+// namespacePaletteItems lists namespaces sorted by name, filtered by the
+// palette query. An empty query returns all.
+func (a *App) namespacePaletteItems() []string {
+	a.mu.Lock()
+	names := namespaceNames(a.namespaces)
+	a.mu.Unlock()
+	all := make([]string, 0, len(names)+1)
+	all = append(all, allNamespacesLabel)
+	all = append(all, names...)
+	q := strings.ToLower(strings.TrimSpace(a.nsPaletteQuery))
+	if q == "" {
+		return all
+	}
+	out := make([]string, 0, len(all))
+	for _, name := range all {
+		if strings.Contains(strings.ToLower(name), q) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// drawNamespacePalette renders the Cmd/Ctrl+P overlay: a search field plus
+// the filtered namespace list. Enter applies the first match; Esc or a
+// backdrop click closes, handled by the modal.
+func (a *App) drawNamespacePalette(c *ui.Context, t *ui.Theme) {
+	if !a.nsPaletteOpen || !namespaceScopedScreen(a.Selected()) {
+		return
+	}
+	items := a.namespacePaletteItems()
+	ui.Modal(c, &a.nsPaletteOpen, func() {
+		ui.Column(c).Width(320).Padding(12).Gap(8).Children(func() {
+			ui.Row(c).Children(func() {
+				search := ui.TextInput(c, &a.nsPaletteQuery).Label("Namespace search").Placeholder("Namespace").Grow(1)
+				if search.Submitted() && len(items) > 0 {
+					a.setNamespaceFilter(a.filterForSelection(items[0]))
+				}
+			})
+			ui.Scroll(c).MaxHeight(280).Children(func() {
+				ui.Column(c).Gap(2).Children(func() {
+					for _, name := range items {
+						n := name
+						row := ui.Row(c).Height(40).Padding(0, 8).Radius(4).AlignItems(ui.Center)
+						if n == a.selectionForFilter(a.nsFilter) {
+							row.Background(t.SurfacePressed)
+						}
+						row.Children(func() {
+							ui.Text(c, n).SingleLine()
+						})
+						if row.Clicked() {
+							a.setNamespaceFilter(a.filterForSelection(n))
+						}
+					}
+					if len(items) == 0 {
+						ui.Text(c, "No matches").TextColor(t.TextMuted).Padding(8)
+					}
+				})
+			})
+		})
+	})
+}
+
+// namespaceSelectOptions builds the dropdown options: All followed by the
+// sorted namespace names.
+func (a *App) namespaceSelectOptions() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	opts := make([]string, 0, len(a.namespaces)+1)
+	opts = append(opts, allNamespacesLabel)
+	opts = append(opts, namespaceNames(a.namespaces)...)
+	return opts
+}
+
+func namespaceNames(namespaces map[string]*corev1.Namespace) []string {
+	names := make([]string, 0, len(namespaces))
+	for name := range namespaces {
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+const allNamespacesLabel = "All namespaces"
+
+func (a *App) filterForSelection(selection string) string {
+	if selection == "" || selection == allNamespacesLabel {
+		return ""
+	}
+	return selection
+}
+
+func (a *App) selectionForFilter(filter string) string {
+	if filter == "" {
+		return allNamespacesLabel
+	}
+	return filter
+}
+
+// drawNamespaceSelector renders the Lens-style namespace dropdown beside
+// list titles. Namespaces come from the informer cache, sorted by name.
+func (a *App) drawNamespaceSelector(c *ui.Context, _ *ui.Theme) {
+	opts := a.namespaceSelectOptions()
+	if len(opts) <= 2 {
+		return
+	}
+	chosen := a.selectionForFilter(a.nsFilter)
+	if ui.Combobox(c, &chosen, opts).Label("Namespace").Width(220).Shrink(0).Changed() {
+		a.setNamespaceFilter(a.filterForSelection(chosen))
+	}
+}
+
+func filterListRows(rows []listRow, namespace string) []listRow {
+	if namespace == "" {
+		return rows
+	}
+	out := make([]listRow, 0, len(rows))
+	for _, row := range rows {
+		if row.Namespace == namespace {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func (a *App) genericRows(ctx context.Context, kind namedKind, missing, namespace string) ([]string, []listRow, string, error) {
 	rows, err := a.session.ListGeneric(ctx, kind.GVR, "")
 	if err != nil {
 		if missing != "" && apierrors.IsNotFound(err) {
@@ -496,10 +661,10 @@ func (a *App) genericRows(ctx context.Context, kind namedKind, missing string) (
 		}
 		return nil, nil, "", err
 	}
-	return genericColumns(), genericListRows(rows, kind.GVR, kind.Kind), "", nil
+	return genericColumns(), filterListRows(genericListRows(rows, kind.GVR, kind.Kind), namespace), "", nil
 }
 
-func (a *App) istioRows(ctx context.Context, id string) ([]string, []listRow, string, error) {
+func (a *App) istioRows(ctx context.Context, id, namespace string) ([]string, []listRow, string, error) {
 	var group string
 	for _, kind := range cluster.IstioKinds {
 		if kind.ID == id {
@@ -515,7 +680,7 @@ func (a *App) istioRows(ctx context.Context, id string) ([]string, []listRow, st
 		gvr := schema.GroupVersionResource{Group: group, Version: ver, Resource: resource}
 		rows, err := a.session.ListGeneric(ctx, gvr, "")
 		if err == nil {
-			return genericColumns(), genericListRows(rows, gvr, istioKindName(id)), "", nil
+			return genericColumns(), filterListRows(genericListRows(rows, gvr, istioKindName(id)), namespace), "", nil
 		}
 		last = err
 		if !apierrors.IsNotFound(err) {
@@ -606,13 +771,13 @@ func (a *App) drawWorkloads(c *ui.Context, t *ui.Theme) {
 	a.mu.Unlock()
 
 	a.prepareInspect("workloads")
-	page := workloads.Build(objects, a.listQuery, a.listFilter, a.listSort.Column, a.listSort.Descending)
+	page := workloads.Build(objects, a.listQuery, a.listFilter, a.listSort.Column, a.listSort.Descending, a.nsFilter)
 	keys := make([]string, len(page.Rows))
 	for i, row := range page.Rows {
 		keys[i] = row.Key
 	}
 	a.bindList(keys)
-	selection := workloads.Draw(c, t, page, contextName, &a.listQuery, &a.listFilter, &a.listState, loading, time.Now(), a.openPage)
+	selection := workloads.Draw(c, t, page, contextName, &a.listQuery, &a.listFilter, &a.listState, loading, time.Now(), a.openPage, a.drawNamespaceSelector)
 	item := selection.Row
 	kind := workloadKind(item.KindID)
 	row := listRow{
