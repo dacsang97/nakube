@@ -136,7 +136,7 @@ func (a *App) sideWidth() float32 {
 	return a.sidebarWidth
 }
 
-func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme, current string, contexts []string) {
+func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme, current string, contexts, labels []string) {
 	a.ensureCatalog()
 	page := ""
 	if a.router != nil {
@@ -148,32 +148,36 @@ func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme, current string, contex
 	}
 	bar := ui.Column(c).FillHeight().Shrink(0).Clip().Background(t.Surface).BorderEndWidth(1).BorderColor(t.Border)
 	w := bar.Animate("rail-width", target, 150*time.Millisecond)
-	// Labels wait for room so they never squeeze mid-animation.
-	labels := a.railExpanded && w >= railLabelMinW
+	// Wide rows follow the animated width in both directions, so their labels
+	// do not disappear before the rail reaches them while collapsing.
+	wide := w >= railLabelMinW
+	if len(labels) != len(contexts) {
+		labels = contextDisplayNames(contexts)
+	}
 	bar.Width(w).Children(func() {
 		ui.Scroll(c).Grow(1).FillHeight().Shrink(0).Children(func() {
 			ui.Column(c).Padding(4, 0).Gap(4).Children(func() {
-				for _, name := range contexts {
-					a.railContextButton(c, t, name, name == current, labels)
+				for i, name := range contexts {
+					a.railContextButton(c, t, name, labels[i], name == current, wide)
 				}
 			})
 		})
-		ui.Column(c).Shrink(0).Padding(4, 0, 8, 0).Children(func() {
-			a.activityButton(c, t, "settings", "Settings", "Settings", page == "settings", labels, func() {
+		ui.Column(c).Shrink(0).Padding(4, 0).Gap(4).Children(func() {
+			a.activityButton(c, t, "settings", "Settings", "Settings", page == "settings", wide, func() {
 				a.togglePage("/settings")
 			})
 			icon, tip := "panel-left-open", "Expand contexts"
 			if a.railExpanded {
 				icon, tip = "panel-left-close", "Collapse contexts"
 			}
-			a.activityButton(c, t, icon, tip+" ("+railShortcutHint()+")", tip, false, labels, a.toggleRail)
+			a.activityButton(c, t, icon, tip+" ("+railShortcutHint()+")", tip, false, wide, a.toggleRail)
 		})
 	})
 }
 
-// railSlot and railButton shape the rail's buttons: a 32px square centered
-// in the compact rail, a full-width row with a label in the expanded one. The
-// icon keeps the same x in both, so it does not jump while the rail animates.
+// railSlot and railButton shape the rail's buttons: a 40px target centered
+// in the compact rail and a full-width 40px row in the expanded one. The icon
+// keeps the same x in both, so it does not jump while the rail animates.
 func railSlot(c *ui.Context, expanded bool) ui.Element {
 	slot := ui.Box(c).Height(activitySlot).AlignSelf(ui.Stretch).AlignItems(ui.Center)
 	if expanded {
@@ -184,9 +188,9 @@ func railSlot(c *ui.Context, expanded bool) ui.Element {
 
 func railButton(c *ui.Context, expanded bool) ui.Element {
 	if expanded {
-		return ui.Button(c, "").Height(32).AlignSelf(ui.Stretch).Padding(0, 6).Gap(10).Radius(6).Border(0, ui.Transparent).AlignItems(ui.Center).Justify(ui.Start)
+		return ui.Button(c, "").Height(activitySlot).AlignSelf(ui.Stretch).Padding(0, 6).Gap(10).Radius(6).Border(0, ui.Transparent).AlignItems(ui.Center).Justify(ui.Start)
 	}
-	return ui.Button(c, "").Size(32, 32).Padding(0).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
+	return ui.Button(c, "").Size(activitySlot, activitySlot).Padding(0).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
 }
 
 func (a *App) activityButton(c *ui.Context, t *ui.Theme, icon, tip, label string, active, expanded bool, fn func()) {
@@ -216,7 +220,7 @@ func (a *App) activityButton(c *ui.Context, t *ui.Theme, icon, tip, label string
 	})
 }
 
-func (a *App) railContextButton(c *ui.Context, t *ui.Theme, name string, active, expanded bool) {
+func (a *App) railContextButton(c *ui.Context, t *ui.Theme, name, displayName string, active, expanded bool) {
 	railSlot(c, expanded).Children(func() {
 		btn := railButton(c, expanded)
 		btn.Tooltip(name).Label(name)
@@ -231,7 +235,7 @@ func (a *App) railContextButton(c *ui.Context, t *ui.Theme, name string, active,
 		btn.Children(func() {
 			ui.Icon(c, IconNamed("server")).Size(20, 20).TextColor(contextColor(name))
 			if expanded {
-				ui.Text(c, shortContextName(name)).FontSize(13).SingleLine().Grow(1).MinWidth(0)
+				ui.Text(c, displayName).FontSize(13).SingleLine().Grow(1).MinWidth(0)
 				if active {
 					ui.Box(c).Size(6, 6).Shrink(0).Radius(3).Background(t.Success)
 				}

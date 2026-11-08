@@ -18,3 +18,26 @@ func TestShortContextName(t *testing.T) {
 		}
 	}
 }
+
+func TestContextDisplayNamesDisambiguatesDuplicateShortNames(t *testing.T) {
+	names := []string{
+		"arn:aws:eks:ap-southeast-1:111111111111:cluster/prod",
+		"arn:aws:eks:us-east-1:222222222222:cluster/prod",
+		"gke_project-a_us-central1-a_staging",
+		"gke_project-b_europe-west1-b_staging",
+		"kind-local",
+	}
+	want := []string{
+		"prod · ap-southeast-1 · 111111111111",
+		"prod · us-east-1 · 222222222222",
+		"staging · project-a · us-central1-a",
+		"staging · project-b · europe-west1-b",
+		"kind-local",
+	}
+	got := contextDisplayNames(names)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("contextDisplayNames(%q) = %q, want %q", names[i], got[i], want[i])
+		}
+	}
+}

@@ -60,11 +60,12 @@ type App struct {
 	dragID  string
 	dragAcc float32
 
-	selected   string
-	appearance Appearance
-	contexts   []string
-	current    string
-	errText    string
+	selected      string
+	appearance    Appearance
+	contexts      []string
+	contextLabels []string
+	current       string
+	errText       string
 
 	pods            map[string]*corev1.Pod
 	nodes           map[string]*corev1.Node
@@ -253,9 +254,11 @@ func (a *App) loadContexts() {
 	if err != nil {
 		a.errText = publicError(err)
 		a.contexts = nil
+		a.contextLabels = nil
 		return
 	}
 	a.contexts = names
+	a.contextLabels = contextDisplayNames(names)
 	a.current = a.session.Current()
 }
 
@@ -451,6 +454,7 @@ func (a *App) view(c *ui.Context) {
 	samples := append([]overview.Sample(nil), a.samples...)
 	current := a.current
 	contexts := a.contexts
+	contextLabels := a.contextLabels
 	errText := a.errText
 	confirm := a.confirm
 	a.mu.Unlock()
@@ -461,7 +465,7 @@ func (a *App) view(c *ui.Context) {
 	shell := ui.Row(c).Fill().AlignItems(ui.Stretch).Background(shellBackdrop(t)).Padding(shellGap).Gap(shellGap)
 	shell.Children(func() {
 		ui.Row(c).Shrink(0).FillHeight().Radius(shellRadius).Clip().Background(t.Surface).Border(1, t.Border).Children(func() {
-			a.drawActivityBar(c, t, current, contexts)
+			a.drawActivityBar(c, t, current, contexts, contextLabels)
 			a.drawSide(c, t, current)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Label("Main content panel").Children(func() {

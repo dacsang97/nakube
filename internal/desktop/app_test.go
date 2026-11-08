@@ -788,6 +788,48 @@ func TestRailExpandedShowsShortNames(t *testing.T) {
 	}
 }
 
+func TestRailButtonsMeetDesktopHitArea(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = []string{"dev"}
+	a.current = "dev"
+	tt := ui.NewTester(a.view, 1100, 720)
+	compact, ok := tt.Find("Expand contexts")
+	if !ok {
+		t.Fatal("compact rail toggle missing")
+	}
+	if compact.W < activitySlot || compact.H < activitySlot {
+		t.Fatalf("compact target is %gx%g, want at least %dx%d", compact.W, compact.H, activitySlot, activitySlot)
+	}
+
+	a.railExpanded = true
+	tt = ui.NewTester(a.view, 1100, 720)
+	expanded, ok := tt.Find("Collapse contexts")
+	if !ok {
+		t.Fatal("expanded rail toggle missing")
+	}
+	if expanded.H < activitySlot {
+		t.Fatalf("expanded target is %gpx high, want at least %dpx", expanded.H, activitySlot)
+	}
+}
+
+func TestRailDisambiguatesDuplicateShortNames(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = []string{
+		"arn:aws:eks:ap-southeast-1:111111111111:cluster/prod",
+		"arn:aws:eks:us-east-1:222222222222:cluster/prod",
+	}
+	a.railExpanded = true
+	tt := ui.NewTester(a.view, 1100, 720)
+	for _, want := range []string{
+		"prod · ap-southeast-1 · 111111111111",
+		"prod · us-east-1 · 222222222222",
+	} {
+		if !tt.HasText(want) {
+			t.Fatalf("expanded rail misses disambiguated label %q, texts %q", want, tt.Texts())
+		}
+	}
+}
+
 func TestRailToggleSavesState(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)

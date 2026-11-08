@@ -21,3 +21,37 @@ func shortContextName(name string) string {
 	}
 	return name
 }
+
+// contextDisplayNames keeps provider-generated names compact when that is
+// unambiguous and adds stable provider details when two contexts share the
+// same short name.
+func contextDisplayNames(names []string) []string {
+	labels := make([]string, len(names))
+	counts := make(map[string]int, len(names))
+	for i, name := range names {
+		labels[i] = shortContextName(name)
+		counts[labels[i]]++
+	}
+	for i, name := range names {
+		if counts[labels[i]] > 1 {
+			labels[i] = disambiguatedContextName(name, labels[i])
+		}
+	}
+	return labels
+}
+
+func disambiguatedContextName(name, short string) string {
+	if strings.HasPrefix(name, "arn:") {
+		parts := strings.SplitN(name, ":", 6)
+		if len(parts) == 6 && parts[3] != "" && parts[4] != "" {
+			return short + " · " + parts[3] + " · " + parts[4]
+		}
+	}
+	if strings.HasPrefix(name, "gke_") {
+		parts := strings.SplitN(name, "_", 4)
+		if len(parts) == 4 && parts[1] != "" && parts[2] != "" {
+			return short + " · " + parts[1] + " · " + parts[2]
+		}
+	}
+	return name
+}
