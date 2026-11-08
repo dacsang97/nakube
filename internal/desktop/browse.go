@@ -517,19 +517,15 @@ func (a *App) setNamespaceFilter(ns string) {
 // namespacePaletteItems lists namespaces sorted by name, filtered by the
 // palette query. An empty query returns all.
 func (a *App) namespacePaletteItems() []string {
-	names := make([]string, 0, len(a.namespaces))
-	for name := range a.namespaces {
-		if name != "" {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
+	a.mu.Lock()
+	all := namespaceNames(a.namespaces)
+	a.mu.Unlock()
 	q := strings.ToLower(strings.TrimSpace(a.nsPaletteQuery))
 	if q == "" {
-		return names
+		return all
 	}
-	out := make([]string, 0, len(names))
-	for _, name := range names {
+	out := make([]string, 0, len(all))
+	for _, name := range all {
 		if strings.Contains(strings.ToLower(name), q) {
 			out = append(out, name)
 		}
@@ -579,6 +575,8 @@ func (a *App) drawNamespacePalette(c *ui.Context, t *ui.Theme) {
 // namespaceSelectOptions builds the dropdown options: All followed by the
 // sorted namespace names.
 func (a *App) namespaceSelectOptions() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	opts := make([]string, 0, len(a.namespaces)+1)
 	opts = append(opts, allNamespacesLabel)
 	opts = append(opts, namespaceNames(a.namespaces)...)
@@ -615,7 +613,9 @@ func (a *App) selectionForFilter(filter string) string {
 // drawNamespaceSelector renders the Lens-style namespace dropdown above list
 // screens. Namespaces come from the informer cache, sorted by name.
 func (a *App) drawNamespaceSelector(c *ui.Context, t *ui.Theme) {
+	a.mu.Lock()
 	names := namespaceNames(a.namespaces)
+	a.mu.Unlock()
 	if len(names) <= 1 {
 		return
 	}

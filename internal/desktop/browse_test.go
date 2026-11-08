@@ -6,6 +6,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/egoist/mygo/ui"
+
 	"github.com/dacsang97/nakube/internal/cluster"
 	"github.com/dacsang97/nakube/internal/views/resource"
 )
@@ -205,4 +207,34 @@ func TestSetNamespaceFilterReloadsCachedLists(t *testing.T) {
 	if b.listGen != gen+1 {
 		t.Fatalf("changing the filter did not reload the list: gen %d -> %d", gen, b.listGen)
 	}
+}
+
+func TestNamespaceSelectorReadsAreRaceFree(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.namespaces = map[string]*corev1.Namespace{
+		"default": {ObjectMeta: metav1.ObjectMeta{Name: "default"}},
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			a.mu.Lock()
+			a.namespaces = map[string]*corev1.Namespace{
+				"default":     {ObjectMeta: metav1.ObjectMeta{Name: "default"}},
+				"kube-system": {ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}},
+			}
+			a.mu.Unlock()
+		}
+	}()
+	query := ""
+	for i := 0; i < 200; i++ {
+		tt := ui.NewTester(func(c *ui.Context) {
+			a.drawNamespaceSelector(c, c.Theme())
+			a.nsPaletteOpen = true
+			a.drawNamespacePalette(c, c.Theme())
+		}, 800, 600)
+		_ = tt.HasText("Namespace")
+		_ = query
+	}
+	<-done
 }
