@@ -30,7 +30,7 @@ func (a *App) drawInspect(c *ui.Context, t *ui.Theme, id string) {
 	case "namespaces":
 		a.drawNamespaces(c, t)
 	case "events":
-		a.drawWithSelector(c, t, a.drawEvents)
+		a.drawEvents(c, t)
 	}
 }
 
@@ -113,7 +113,7 @@ func (a *App) drawEvents(c *ui.Context, t *ui.Theme) {
 		keys[i] = row.Key
 	}
 	a.bindList(keys)
-	selection := events.Draw(c, t, page, &a.listQuery, &a.listState, loading)
+	selection := events.Draw(c, t, page, &a.listQuery, &a.listState, loading, a.drawNamespaceSelector)
 	if selection.Valid {
 		row := page.Rows[selection.Index]
 		resourceRow := listRow{Namespace: row.Namespace, Name: row.Identity.Name, Identity: row.Identity}

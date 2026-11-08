@@ -25,7 +25,7 @@ func TestRenderWorkloadOverview(t *testing.T) {
 		sort := ui.SortOrder{Column: ColKind}
 		state := ui.ListState{Selected: &selected, Sort: &sort}
 		tt := ui.NewTester(func(c *ui.Context) {
-			Draw(c, c.Theme(), page, "dev", &query, &filter, &state, false, time.Now(), nil)
+			Draw(c, c.Theme(), page, "dev", &query, &filter, &state, false, time.Now(), nil, nil)
 		}, width, 900)
 		for _, want := range []string{"Workloads", "Overall readiness", "Health by kind", "Inventory", "Pod", "Deployment", "Healthy", "Active"} {
 			if !tt.HasText(want) {
@@ -53,7 +53,7 @@ func TestRowClickRendersDetailPanelContent(t *testing.T) {
 	tt := ui.NewTester(func(c *ui.Context) {
 		ui.Row(c).Fill().Gap(4).Children(func() {
 			ui.Column(c).Grow(1).MinWidth(0).FillHeight().Children(func() {
-				selection := Draw(c, c.Theme(), page, "dev", &query, &filter, &state, false, time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC), nil)
+				selection := Draw(c, c.Theme(), page, "dev", &query, &filter, &state, false, time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC), nil, nil)
 				if selection.Changed {
 					open = true
 				}
@@ -80,7 +80,7 @@ func TestRenderWorkloadLoadingKeepsChrome(t *testing.T) {
 	query := ""
 	filter := 0
 	tt := ui.NewTester(func(c *ui.Context) {
-		Draw(c, c.Theme(), Page{Kinds: kindSummaries()}, "dev", &query, &filter, &ui.ListState{}, true, time.Now(), nil)
+		Draw(c, c.Theme(), Page{Kinds: kindSummaries()}, "dev", &query, &filter, &ui.ListState{}, true, time.Now(), nil, nil)
 	}, 900, 700)
 	for _, want := range []string{"Workloads", "Total", "Overall readiness", "Health by kind", "Inventory"} {
 		if !tt.HasText(want) {

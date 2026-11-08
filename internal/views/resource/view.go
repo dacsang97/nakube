@@ -15,24 +15,25 @@ type Row struct {
 
 // List is a generic resource table plus the actions for the selected row.
 type List struct {
-	Title    string
-	Err      string
-	Notice   string
-	Empty    string
-	Loading  bool
-	Columns  []string
-	Rows     []Row
-	Selected *int
-	ScaleTo  *string
-	Local    *string
-	Remote   *string
-	Revision *string
-	OnAction func(index int, action string)
+	Title         string
+	Err           string
+	Notice        string
+	Empty         string
+	Loading       bool
+	Columns       []string
+	Rows          []Row
+	Selected      *int
+	ScaleTo       *string
+	Local         *string
+	Remote        *string
+	Revision      *string
+	OnAction      func(index int, action string)
+	HeaderControl func(c *ui.Context, t *ui.Theme)
 }
 
 // Draw paints the list. It does not load it.
 func Draw(c *ui.Context, t *ui.Theme, list List) kit.Selection {
-	ui.Text(c, list.Title).FontSize(22).Bold()
+	kit.PageHeader(c, t, list.Title, "", list.HeaderControl)
 	switch {
 	case list.Err != "":
 		ui.Text(c, list.Err).TextColor(t.Danger)

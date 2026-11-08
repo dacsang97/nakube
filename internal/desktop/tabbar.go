@@ -306,7 +306,7 @@ func (a *App) tabKeys(e ui.Element) {
 		prevMods, prevKey = ui.Cmd|ui.Alt, ui.KeyLeft
 	}
 	switch {
-	case e.Shortcut(paletteMods, ui.KeyP):
+	case namespaceScopedScreen(a.Selected()) && e.Shortcut(paletteMods, ui.KeyP):
 		a.nsPaletteOpen = !a.nsPaletteOpen
 		a.nsPaletteQuery = ""
 		a.invalidate()

@@ -22,32 +22,42 @@ type Selection struct {
 // selected details in the shell panel. A nil Query hides the field. A nil
 // Filter, or no Filters, hides the switch.
 type Board struct {
-	Title   string
-	Count   string
-	Err     string
-	Notice  string
-	Empty   string
-	Loading bool
-	Query   *string
-	Hint    string
-	Filters []string
-	Filter  *int
-	Columns []Column
-	Rows    int
-	State   *ui.ListState
-	Cell    func(c *ui.Context, row, col int)
+	Title         string
+	Count         string
+	Err           string
+	Notice        string
+	Empty         string
+	Loading       bool
+	Query         *string
+	Hint          string
+	Filters       []string
+	Filter        *int
+	Columns       []Column
+	Rows          int
+	State         *ui.ListState
+	Cell          func(c *ui.Context, row, col int)
+	HeaderControl func(c *ui.Context, t *ui.Theme)
+}
+
+// PageHeader keeps a page title, optional count, and controls in one compact
+// row. It wraps only when the window cannot fit the full header.
+func PageHeader(c *ui.Context, t *ui.Theme, title, count string, control func(*ui.Context, *ui.Theme)) {
+	ui.Row(c).Gap(12).AlignItems(ui.Center).Wrap().Children(func() {
+		ui.Text(c, title).FontSize(22).Bold()
+		if count != "" {
+			ui.Text(c, count).TextColor(t.TextMuted)
+		}
+		if control != nil {
+			control(c, t)
+		}
+	})
 }
 
 // DrawBoard paints a board. It does not load, search, or sort the rows.
 func DrawBoard(c *ui.Context, t *ui.Theme, b Board) Selection {
 	changed := false
 	ui.Column(c).Grow(1).MinWidth(0).MinHeight(0).Gap(12).Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Baseline).Children(func() {
-			ui.Text(c, b.Title).FontSize(22).Bold()
-			if b.Count != "" {
-				ui.Text(c, b.Count).TextColor(t.TextMuted)
-			}
-		})
+		PageHeader(c, t, b.Title, b.Count, b.HeaderControl)
 		if b.Query != nil || (len(b.Filters) > 0 && b.Filter != nil) {
 			toolbar(c, b)
 		}

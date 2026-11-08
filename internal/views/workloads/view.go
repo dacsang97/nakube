@@ -17,7 +17,7 @@ type Selection struct {
 	Changed bool
 }
 
-func Draw(c *ui.Context, t *ui.Theme, page Page, contextName string, query *string, filter *int, state *ui.ListState, loading bool, now time.Time, onOpen func(string)) Selection {
+func Draw(c *ui.Context, t *ui.Theme, page Page, contextName string, query *string, filter *int, state *ui.ListState, loading bool, now time.Time, onOpen func(string), headerControl func(*ui.Context, *ui.Theme)) Selection {
 	if now.IsZero() {
 		now = time.Now()
 	}
@@ -25,7 +25,7 @@ func Draw(c *ui.Context, t *ui.Theme, page Page, contextName string, query *stri
 	ui.Box(c).Grow(1).MinWidth(0).FillHeight().Children(func() {
 		ui.Scroll(c).Fill().Scrollbars(false).Children(func() {
 			ui.Column(c).Gap(14).Children(func() {
-				header(c, t, page, contextName, loading)
+				header(c, t, page, contextName, loading, headerControl)
 				summary(c, t, page, loading)
 				visuals(c, t, page, loading, onOpen)
 				changed = inventory(c, t, page, query, filter, state, loading, now)
@@ -36,10 +36,10 @@ func Draw(c *ui.Context, t *ui.Theme, page Page, contextName string, query *stri
 	return Selection{Row: row, Valid: valid, Changed: changed}
 }
 
-func header(c *ui.Context, t *ui.Theme, page Page, contextName string, loading bool) {
+func header(c *ui.Context, t *ui.Theme, page Page, contextName string, loading bool, headerControl func(*ui.Context, *ui.Theme)) {
 	ui.Row(c).Gap(12).AlignItems(ui.Center).Wrap().Children(func() {
 		ui.Column(c).Grow(1).MinWidth(220).Gap(2).Children(func() {
-			ui.Text(c, "Workloads").FontSize(22).Bold()
+			kit.PageHeader(c, t, "Workloads", "", headerControl)
 			line := contextName
 			if line == "" {
 				line = "No context"

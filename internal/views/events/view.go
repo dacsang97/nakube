@@ -18,21 +18,22 @@ const (
 )
 
 // Draw paints the event list. It does not load it.
-func Draw(c *ui.Context, t *ui.Theme, page Page, query *string, state *ui.ListState, loading bool) kit.Selection {
+func Draw(c *ui.Context, t *ui.Theme, page Page, query *string, state *ui.ListState, loading bool, headerControl func(*ui.Context, *ui.Theme)) kit.Selection {
 	empty := "None"
 	if page.Total > 0 && len(page.Rows) == 0 {
 		empty = "No matches"
 	}
 	return kit.DrawBoard(c, t, kit.Board{
-		Title:   "Events",
-		Count:   kit.Count(len(page.Rows), page.Total),
-		Empty:   empty,
-		Loading: loading,
-		Query:   query,
-		Hint:    "Search events",
-		Columns: columns(),
-		Rows:    len(page.Rows),
-		State:   state,
+		Title:         "Events",
+		Count:         kit.Count(len(page.Rows), page.Total),
+		Empty:         empty,
+		Loading:       loading,
+		Query:         query,
+		Hint:          "Search events",
+		Columns:       columns(),
+		Rows:          len(page.Rows),
+		State:         state,
+		HeaderControl: headerControl,
 		Cell: func(c *ui.Context, row, col int) {
 			cell(c, t, page.Rows[row], col, kit.Chosen(state, row, col))
 		},

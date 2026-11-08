@@ -94,18 +94,15 @@ func hasAction(actions []string, want string) bool {
 }
 
 func TestFilterListRows(t *testing.T) {
-	a := New(cluster.NewSession())
 	rows := []listRow{
 		{Namespace: "ns-a", Name: "one"},
 		{Namespace: "ns-b", Name: "two"},
 	}
-	a.nsFilter = "ns-a"
-	got := a.filterListRows(rows)
+	got := filterListRows(rows, "ns-a")
 	if len(got) != 1 || got[0].Namespace != "ns-a" {
 		t.Fatalf("filtered rows = %+v", got)
 	}
-	a.nsFilter = ""
-	if got := a.filterListRows(rows); len(got) != 2 {
+	if got := filterListRows(rows, ""); len(got) != 2 {
 		t.Fatalf("all rows = %+v", got)
 	}
 }
@@ -140,8 +137,12 @@ func TestNamespacePaletteFilter(t *testing.T) {
 		t.Fatalf("palette items = %v", items)
 	}
 	a.nsPaletteQuery = ""
-	if items := a.namespacePaletteItems(); len(items) != 3 || items[0] != "default" {
+	if items := a.namespacePaletteItems(); len(items) != 4 || items[0] != allNamespacesLabel || items[1] != "default" {
 		t.Fatalf("all palette items = %v", items)
+	}
+	a.nsPaletteQuery = "all"
+	if items := a.namespacePaletteItems(); len(items) != 1 || items[0] != allNamespacesLabel {
+		t.Fatalf("all-namespaces palette items = %v", items)
 	}
 	a.nsPaletteOpen = true
 	a.setNamespaceFilter("monitoring")
@@ -206,6 +207,82 @@ func TestSetNamespaceFilterReloadsCachedLists(t *testing.T) {
 	defer a.mu.Unlock()
 	if b.listGen != gen+1 {
 		t.Fatalf("changing the filter did not reload the list: gen %d -> %d", gen, b.listGen)
+	}
+	if b.nsFilter != "default" {
+		t.Fatalf("reload captured namespace %q", b.nsFilter)
+	}
+}
+
+func TestNamespaceControlsRespectScreenScope(t *testing.T) {
+	for _, id := range []string{"workloads", "pods", "events", "services"} {
+		if !namespaceScopedScreen(id) {
+			t.Errorf("%s should support namespace filtering", id)
+		}
+	}
+	for _, id := range []string{"overview", "nodes", "namespaces", "helm", "port-forwards", "settings", "catalog", "argo-applications"} {
+		if namespaceScopedScreen(id) {
+			t.Errorf("%s should not support namespace filtering", id)
+		}
+	}
+
+	a := New(cluster.NewSession())
+	a.namespaces = map[string]*corev1.Namespace{
+		"default":     {ObjectMeta: metav1.ObjectMeta{Name: "default"}},
+		"kube-system": {ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}},
+	}
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.drawMain(c, c.Theme(), "port-forwards", listSnap{})
+	}, 800, 600)
+	if tt.HasText("Namespace") {
+		t.Fatal("port-forwards rendered a namespace selector")
+	}
+
+	pods := ui.NewTester(func(c *ui.Context) {
+		a.drawMain(c, c.Theme(), "pods", listSnap{})
+	}, 800, 600)
+	title, titleOK := pods.Find("Pods")
+	selector, selectorOK := pods.Find("Namespace")
+	if !titleOK || !selectorOK {
+		t.Fatalf("pods header missing title or namespace selector: %v", pods.Texts())
+	}
+	titleCenter := title.Y + title.H/2
+	selectorCenter := selector.Y + selector.H/2
+	if delta := titleCenter - selectorCenter; delta < -4 || delta > 4 {
+		t.Fatalf("namespace selector is not inline with title: title y %.1f selector y %.1f", titleCenter, selectorCenter)
+	}
+	if gap := selector.X - (title.X + title.W); gap < 0 || gap > 20 {
+		t.Fatalf("namespace selector is not beside title: gap %.1f", gap)
+	}
+}
+
+func TestNamespacePaletteIsLabeledAndCanResetToAll(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.namespaces = map[string]*corev1.Namespace{
+		"default":     {ObjectMeta: metav1.ObjectMeta{Name: "default"}},
+		"kube-system": {ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}},
+	}
+	a.showScreen("pods", true)
+	a.nsFilter = "default"
+	a.nsPaletteOpen = true
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.drawNamespacePalette(c, c.Theme())
+	}, 800, 600)
+	if !tt.Focused("Namespace search") {
+		t.Fatal("namespace palette search was not labeled and focused")
+	}
+	if err := tt.Click(allNamespacesLabel); err != nil {
+		t.Fatal(err)
+	}
+	if a.nsFilter != "" || a.nsPaletteOpen {
+		t.Fatalf("All namespaces left filter %q open %v", a.nsFilter, a.nsPaletteOpen)
+	}
+
+	a.nsPaletteOpen = true
+	a.nsPaletteQuery = "ku"
+	tt.Frame()
+	tt.Key(0, ui.KeyEnter)
+	if a.nsFilter != "kube-system" || a.nsPaletteOpen {
+		t.Fatalf("Enter selected filter %q open %v", a.nsFilter, a.nsPaletteOpen)
 	}
 }
 
