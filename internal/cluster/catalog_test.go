@@ -89,6 +89,36 @@ func TestAddFolderReadsConfigFile(t *testing.T) {
 	}
 }
 
+func TestRemoveKubeconfigFolderDropsItsFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KUBECONFIG", filepath.Join(home, "missing"))
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(pastedKubeconfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSession()
+	if err := s.AddKubeconfigPath(dir); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.ExtraKubeconfigs()) != 1 {
+		t.Fatalf("extra kubeconfigs = %v", s.ExtraKubeconfigs())
+	}
+	s.RemoveKubeconfigPath(dir)
+	if len(s.ExtraKubeconfigs()) != 0 {
+		t.Fatalf("removed folder remains in %v", s.ExtraKubeconfigs())
+	}
+	infos, _, err := s.ContextInfos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, info := range infos {
+		if info.Name == "pasted-ctx" {
+			t.Fatalf("removed context remains in %+v", infos)
+		}
+	}
+}
+
 func TestContextInfoHidesCredentials(t *testing.T) {
 	dir := t.TempDir()
 	body := `

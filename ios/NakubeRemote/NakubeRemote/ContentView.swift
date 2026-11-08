@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 struct PodRow: Decodable, Identifiable {
@@ -33,14 +34,20 @@ struct ContentView: View {
     @State private var errorText = ""
     @State private var loading = false
     @State private var pending: PendingAction?
+    @State private var showingScanner = false
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Desktop") {
-                    TextField("MagicDNS name", text: $host)
+                    TextField("Tailscale address", text: $host)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    Button {
+                        showingScanner = true
+                    } label: {
+                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                    }
                     Button(loading ? "Refreshing…" : "Refresh") { Task { await refresh() } }
                         .disabled(loading)
                 }
@@ -96,6 +103,25 @@ struct ContentView: View {
                 Text(pending?.message ?? "")
             }
         }
+        .sheet(isPresented: $showingScanner) {
+            NavigationStack {
+                QRScannerView(
+                    onCode: connect,
+                    onError: { message in
+                        showingScanner = false
+                        errorText = message
+                    }
+                )
+                .ignoresSafeArea()
+                .navigationTitle("Scan Na Kube")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showingScanner = false }
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -130,6 +156,16 @@ struct ContentView: View {
 
     private var pendingPresented: Binding<Bool> {
         Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })
+    }
+
+    private func connect(code: String) {
+        showingScanner = false
+        guard let scannedHost = tailscaleHost(from: code) else {
+            errorText = "That QR code is not a Na Kube Tailscale address."
+            return
+        }
+        host = scannedHost
+        Task { await refresh() }
     }
 
     private func refresh() async {
@@ -182,6 +218,139 @@ struct ContentView: View {
             throw URLError(.badServerResponse)
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+}
+
+private func tailscaleHost(from code: String) -> String? {
+    let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let components = URLComponents(string: trimmed) else { return nil }
+    let candidate: String?
+    switch components.scheme?.lowercased() {
+    case "nakube":
+        candidate = components.queryItems?.first(where: { $0.name == "host" })?.value
+    case "http", "https":
+        candidate = components.host
+    default:
+        candidate = trimmed
+    }
+    guard let host = candidate?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+          isTailscaleHost(host) else {
+        return nil
+    }
+    return host
+}
+
+private func isTailscaleHost(_ host: String) -> Bool {
+    if host.hasSuffix(".ts.net") {
+        return host.count > ".ts.net".count
+    }
+    let octets = host.split(separator: ".", omittingEmptySubsequences: false).compactMap { Int($0) }
+    guard octets.count == 4, octets.allSatisfy({ 0...255 ~= $0 }) else { return false }
+    return octets[0] == 100 && (64...127).contains(octets[1])
+}
+
+private struct QRScannerView: UIViewControllerRepresentable {
+    let onCode: (String) -> Void
+    let onError: (String) -> Void
+
+    func makeUIViewController(context: Context) -> QRScannerViewController {
+        QRScannerViewController(onCode: onCode, onError: onError)
+    }
+
+    func updateUIViewController(_ controller: QRScannerViewController, context: Context) {}
+}
+
+private final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+    private let session = AVCaptureSession()
+    private let onCode: (String) -> Void
+    private let onError: (String) -> Void
+    private var configured = false
+    private var delivered = false
+
+    init(onCode: @escaping (String) -> Void, onError: @escaping (String) -> Void) {
+        self.onCode = onCode
+        self.onError = onError
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is unavailable")
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            configureAndStart()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self?.configureAndStart()
+                    } else {
+                        self?.onError("Camera access is required to scan the desktop QR code.")
+                    }
+                }
+            }
+        default:
+            onError("Allow camera access in Settings to scan the desktop QR code.")
+        }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if session.isRunning {
+            session.stopRunning()
+        }
+    }
+
+    private func configureAndStart() {
+        guard !configured else {
+            if !session.isRunning { session.startRunning() }
+            return
+        }
+        guard let camera = AVCaptureDevice.default(for: .video),
+              let input = try? AVCaptureDeviceInput(device: camera),
+              session.canAddInput(input) else {
+            onError("No camera is available to scan the desktop QR code.")
+            return
+        }
+        let output = AVCaptureMetadataOutput()
+        guard session.canAddOutput(output) else {
+            onError("This camera cannot scan QR codes.")
+            return
+        }
+        session.addInput(input)
+        session.addOutput(output)
+        output.setMetadataObjectsDelegate(self, queue: .main)
+        output.metadataObjectTypes = [.qr]
+
+        let preview = AVCaptureVideoPreviewLayer(session: session)
+        preview.videoGravity = .resizeAspectFill
+        preview.frame = view.bounds
+        view.layer.insertSublayer(preview, at: 0)
+        configured = true
+        session.startRunning()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        (view.layer.sublayers?.first { $0 is AVCaptureVideoPreviewLayer } as? AVCaptureVideoPreviewLayer)?.frame = view.bounds
+    }
+
+    func metadataOutput(
+        _ output: AVCaptureMetadataOutput,
+        didOutput metadataObjects: [AVMetadataObject],
+        from connection: AVCaptureConnection
+    ) {
+        guard !delivered,
+              let code = (metadataObjects.first as? AVMetadataMachineReadableCodeObject)?.stringValue else {
+            return
+        }
+        delivered = true
+        session.stopRunning()
+        onCode(code)
     }
 }
 

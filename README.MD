@@ -34,6 +34,10 @@ One tab per screen. A click opens a preview and replaces the previous one. A dou
 | Jump | Command-1–8, Command-9 last | Ctrl-1–8, Ctrl-9 last |
 | Namespace palette | Command-P | Ctrl-P |
 
+## Settings
+
+**Catalog** always loads the built-in kubeconfig directory and can sync additional kubeconfig files or folders. **Paste kubeconfig** validates YAML before storing it as a private `0600` file; synced sources can be removed without deleting the original file or folder.
+
 ## Checks
 
 CI runs these on pull requests and on `main`. They do not package the app.
@@ -47,7 +51,7 @@ make lint
 
 ## Phone
 
-The phone app stores a MagicDNS name and calls `http://<name>:47623` on the tailnet. Cleartext HTTP is allowed for `ts.net`. Restart and delete confirm on the phone. A bare pod cannot be restarted.
+Open **Settings → Na Kube Mobile** on the desktop, then use **Scan QR Code** in the phone app. Both devices must be signed in to the same Tailscale tailnet and MagicDNS must be enabled. The QR transfers only the desktop MagicDNS name and fixed port; the phone calls `http://<name>:47623` on the tailnet. Cleartext HTTP is allowed only for `ts.net`. Restart and delete confirm on the phone. A bare pod cannot be restarted.
 
 ## Release
 

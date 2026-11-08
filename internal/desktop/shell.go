@@ -282,6 +282,10 @@ func (a *App) drawSide(c *ui.Context, t *ui.Theme, current string) {
 	if a.router != nil {
 		page = screenID(a.router.Path())
 	}
+	if page == "settings" {
+		a.drawSettingsSide(c, t)
+		return
+	}
 	ui.Column(c).Width(a.sideWidth()).Shrink(0).FillHeight().Background(t.Surface).Children(func() {
 		ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 12).AlignItems(ui.Center).Background(tabInactive(t)).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Label("Sidebar header").Children(func() {
 			a.drawContextHeader(c, t, current)
