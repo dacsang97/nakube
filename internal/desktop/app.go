@@ -136,6 +136,8 @@ type App struct {
 
 	listGen           int
 	nsFilter          string
+	nsPaletteOpen     bool
+	nsPaletteQuery    string
 	listID            string
 	listLoading       bool
 	listErr           string
@@ -528,6 +530,7 @@ func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, 
 		ui.Text(c, "Not found")
 	}
 	a.confirmDialog(c, t, confirm)
+	a.drawNamespacePalette(c, t)
 }
 
 func (a *App) kindReady(kind string) bool {

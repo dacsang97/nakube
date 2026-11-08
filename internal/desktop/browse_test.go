@@ -124,3 +124,26 @@ func TestSelectNamespaceResetsRow(t *testing.T) {
 		t.Fatalf("all filter = %q", a.nsFilter)
 	}
 }
+
+func TestNamespacePaletteFilter(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.namespaces = map[string]*corev1.Namespace{
+		"monitoring":  {ObjectMeta: metav1.ObjectMeta{Name: "monitoring"}},
+		"kube-system": {ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}},
+		"default":     {ObjectMeta: metav1.ObjectMeta{Name: "default"}},
+	}
+	a.nsPaletteQuery = "ku"
+	items := a.namespacePaletteItems()
+	if len(items) != 1 || items[0] != "kube-system" {
+		t.Fatalf("palette items = %v", items)
+	}
+	a.nsPaletteQuery = ""
+	if items := a.namespacePaletteItems(); len(items) != 3 || items[0] != "default" {
+		t.Fatalf("all palette items = %v", items)
+	}
+	a.nsPaletteOpen = true
+	a.setNamespaceFilter("monitoring")
+	if a.nsPaletteOpen {
+		t.Fatal("applying a namespace left the palette open")
+	}
+}

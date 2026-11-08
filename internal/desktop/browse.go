@@ -504,7 +504,71 @@ func (a *App) fetchList(ctx context.Context, id string) ([]string, []listRow, st
 func (a *App) setNamespaceFilter(ns string) {
 	a.nsFilter = ns
 	a.row = -1
+	a.nsPaletteOpen = false
+	a.nsPaletteQuery = ""
 	a.invalidate()
+}
+
+// namespacePaletteItems lists namespaces sorted by name, filtered by the
+// palette query. An empty query returns all.
+func (a *App) namespacePaletteItems() []string {
+	names := make([]string, 0, len(a.namespaces))
+	for name := range a.namespaces {
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	q := strings.ToLower(strings.TrimSpace(a.nsPaletteQuery))
+	if q == "" {
+		return names
+	}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		if strings.Contains(strings.ToLower(name), q) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// drawNamespacePalette renders the Cmd/Ctrl+P overlay: a search field plus
+// the filtered namespace list. Enter applies the first match; Esc or a
+// backdrop click closes, handled by the modal.
+func (a *App) drawNamespacePalette(c *ui.Context, t *ui.Theme) {
+	if !a.nsPaletteOpen {
+		return
+	}
+	ui.Modal(c, &a.nsPaletteOpen, func() {
+		c.OnShortcut(0, ui.KeyEnter, func() {
+			if items := a.namespacePaletteItems(); len(items) > 0 {
+				a.setNamespaceFilter(items[0])
+			}
+		})
+		ui.Column(c).Width(320).Padding(12).Gap(8).Children(func() {
+			ui.Row(c).Children(func() {
+				ui.TextInput(c, &a.nsPaletteQuery).Placeholder("Namespace").Grow(1)
+			})
+			ui.Scroll(c).MaxHeight(280).Children(func() {
+				ui.Column(c).Gap(2).Children(func() {
+					for _, name := range a.namespacePaletteItems() {
+						n := name
+						row := ui.Row(c).Height(28).Padding(0, 8).Radius(4).AlignItems(ui.Center)
+						if n == a.nsFilter {
+							row.Background(t.SurfacePressed)
+						}
+						ui.Text(c, n).SingleLine()
+						if row.Clicked() {
+							a.setNamespaceFilter(n)
+						}
+					}
+					if len(a.namespacePaletteItems()) == 0 {
+						ui.Text(c, "No matches").TextColor(t.TextMuted).Padding(8)
+					}
+				})
+			})
+		})
+	})
 }
 
 // drawNamespaceSelector renders the All + per-namespace chip row above list
