@@ -16,7 +16,7 @@ func TestRenderWorkloadOverview(t *testing.T) {
 	page := Build([]runtime.Object{
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "prod"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}},
 		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "prod"}, Spec: appsv1.DeploymentSpec{Replicas: &one}, Status: appsv1.DeploymentStatus{ReadyReplicas: 0}},
-	}, "", 0, ColKind, false)
+	}, "", 0, ColKind, false, "")
 	query := ""
 	filter := 0
 
@@ -43,7 +43,7 @@ func TestRowClickRendersDetailPanelContent(t *testing.T) {
 			Spec:       appsv1.DeploymentSpec{Replicas: &one},
 			Status:     appsv1.DeploymentStatus{ReadyReplicas: 1},
 		},
-	}, "", 0, ColKind, false)
+	}, "", 0, ColKind, false, "")
 	query := ""
 	filter := 0
 	selected := -1

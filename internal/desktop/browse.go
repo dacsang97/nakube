@@ -606,7 +606,7 @@ func (a *App) drawWorkloads(c *ui.Context, t *ui.Theme) {
 	a.mu.Unlock()
 
 	a.prepareInspect("workloads")
-	page := workloads.Build(objects, a.listQuery, a.listFilter, a.listSort.Column, a.listSort.Descending)
+	page := workloads.Build(objects, a.listQuery, a.listFilter, a.listSort.Column, a.listSort.Descending, a.nsFilter)
 	keys := make([]string, len(page.Rows))
 	for i, row := range page.Rows {
 		keys[i] = row.Key
