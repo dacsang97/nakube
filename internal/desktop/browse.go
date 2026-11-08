@@ -464,7 +464,8 @@ func (a *App) liveRowsLocked(id string) ([]string, []listRow) {
 	case "workloads":
 		return nil, nil
 	case "pods":
-		return podTable(a.pods)
+		cols, rows := podTable(a.pods)
+		return cols, a.filterListRows(rows)
 	case "port-forwards":
 		return forwardTable(a.forwards)
 	default:

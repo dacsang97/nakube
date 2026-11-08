@@ -171,3 +171,23 @@ func TestNamespaceSelectOptions(t *testing.T) {
 		t.Fatalf("filter shows %q", got)
 	}
 }
+
+func TestLivePodsFilterByNamespace(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.pods = map[string]*corev1.Pod{
+		"ns-a/one": {ObjectMeta: metav1.ObjectMeta{Name: "one", Namespace: "ns-a"}},
+		"ns-b/two": {ObjectMeta: metav1.ObjectMeta{Name: "two", Namespace: "ns-b"}},
+	}
+	a.nsFilter = "ns-a"
+	cols, rows := a.liveRowsLocked("pods")
+	if len(rows) != 1 || rows[0].Namespace != "ns-a" {
+		t.Fatalf("live pods rows = %+v", rows)
+	}
+	if len(cols) == 0 {
+		t.Fatal("columns lost")
+	}
+	a.nsFilter = ""
+	if _, rows := a.liveRowsLocked("pods"); len(rows) != 2 {
+		t.Fatalf("all pods rows = %+v", rows)
+	}
+}
