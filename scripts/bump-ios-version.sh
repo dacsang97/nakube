@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Update the iOS version and print release commands. Never commits, tags, or pushes.
+# Bump the iOS version, commit, tag, and atomically push the release.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 exec ruby - "$root" "$@" <<'RUBY'
 require "optparse"
 require "shellwords"
+require "open3"
 
 root = ARGV.shift
 options = { dry_run: false, build_only: false }
@@ -14,11 +15,17 @@ parser = OptionParser.new do |opts|
   opts.separator ""
   opts.separator "Set iOS MARKETING_VERSION and increment CURRENT_PROJECT_VERSION."
   opts.separator "Without VERSION, increment only the source build number."
-  opts.separator "Print explicit commit/tag/push commands; never execute them."
+  opts.separator "Requires clean main; commits, tags, and atomically pushes to origin."
   opts.separator "Xcode Cloud assigns the distributed build number independently."
-  opts.on("--dry-run", "Preview without changing files") { options[:dry_run] = true }
+  opts.on("--dry-run", "Check and preview without changing files, committing, tagging, or pushing") { options[:dry_run] = true }
   opts.on("--build-only", "Keep marketing version and increment build") { options[:build_only] = true }
   opts.on("-h", "--help", "Show help") { puts opts; exit }
+end
+
+git = lambda do |*args|
+  stdout, stderr, status = Open3.capture3("git", "-C", root, *args)
+  raise "git #{args.shelljoin} failed: #{stderr.strip}" unless status.success?
+  stdout
 end
 
 begin
@@ -49,9 +56,15 @@ begin
   end
   build = Integer(builds.first, 10) + 1
   tag = requested ? "ios-v#{version}" : "ios-v#{version}-build.#{build}"
-  exists = system("git", "-C", root, "show-ref", "--verify", "--quiet", "refs/tags/#{tag}")
-  raise "Tag #{tag} already exists; use --build-only for another build" if exists
-  raise "Cannot inspect local tags" unless $?.exitstatus == 1
+  raise "Release must run on main" unless git.call("branch", "--show-current").strip == "main"
+  raise "Working tree must be clean; commit or stash changes first" unless git.call("status", "--porcelain", "--untracked-files=all").empty?
+  git.call("remote", "get-url", "origin")
+  git.call("var", "GIT_AUTHOR_IDENT")
+  git.call("var", "GIT_COMMITTER_IDENT")
+  git.call("fetch", "--quiet", "--tags", "origin", "refs/heads/main:refs/remotes/origin/main")
+  behind = git.call("rev-list", "--count", "HEAD..refs/remotes/origin/main").strip
+  raise "main is behind or diverged from origin/main; update it first" unless behind == "0"
+  raise "Tag #{tag} already exists; use --build-only for another build" unless git.call("tag", "--list", tag).empty?
 
   updated = source.gsub(/\bMARKETING_VERSION = [^;]+;/, "MARKETING_VERSION = #{version};")
                   .gsub(/\bCURRENT_PROJECT_VERSION = [^;]+;/, "CURRENT_PROJECT_VERSION = #{build};")
@@ -62,14 +75,23 @@ begin
   puts "  CURRENT_PROJECT_VERSION (source/local): #{builds.first} -> #{build}"
   puts "  Tag: #{tag}"
   puts ""
-  puts "Review changes and run scripts/check-swift.sh before releasing."
-  puts "After checking that remote tags are up to date, run from the repository root:"
-  puts "  git add -- #{relative.shellescape}"
-  puts "  git commit -m #{"chore(ios): release #{version} build #{build}".shellescape}"
-  puts "  git tag -a #{tag.shellescape} -m #{"NaKube iOS #{version} source build #{build}".shellescape}"
-  puts "  git push origin HEAD"
-  puts "  git push origin #{"refs/tags/#{tag}".shellescape}"
-  puts "Only push the explicit iOS tag; do not use --tags or --follow-tags."
+  push = ["-c", "push.followTags=false", "push", "--atomic", "origin",
+          "HEAD:refs/heads/main", "refs/tags/#{tag}:refs/tags/#{tag}"]
+  if options[:dry_run]
+    puts "Would commit the version settings, create annotated tag #{tag}, and run:"
+    puts "  git #{push.shelljoin}"
+    puts "Dry run: no files, commits, tags, or remote branches changed."
+  else
+    git.call("add", "--", relative)
+    puts git.call("commit", "-m", "chore(ios): release #{version} build #{build}")
+    git.call("tag", "-a", tag, "-m", "NaKube iOS #{version} source build #{build}")
+    begin
+      puts git.call(*push)
+    rescue RuntimeError => error
+      raise "#{error.message}\nLocal release commit and tag were kept. Inspect them before retrying:\n  git #{push.shelljoin}"
+    end
+    puts "Released #{tag}; Xcode Cloud will build when its ios-v trigger is configured."
+  end
   puts "Xcode Cloud uses MARKETING_VERSION plus its own CI_BUILD_NUMBER for TestFlight."
 rescue OptionParser::ParseError, RuntimeError, SystemCallError => error
   warn "error: #{error.message}"
