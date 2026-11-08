@@ -60,11 +60,12 @@ type App struct {
 	dragID  string
 	dragAcc float32
 
-	selected   string
-	appearance Appearance
-	contexts   []string
-	current    string
-	errText    string
+	selected      string
+	appearance    Appearance
+	contexts      []string
+	contextLabels []string
+	current       string
+	errText       string
 
 	pods            map[string]*corev1.Pod
 	nodes           map[string]*corev1.Node
@@ -151,16 +152,13 @@ type App struct {
 	detailCopiedKey   string
 	detailCopiedUntil time.Time
 	catalogLoaded     bool
-	catalogSynced     time.Time
-	catalogPins       []string
 	catalogFiles      []string
 	catalogErr        string
-	addPath           string
-	paste             *editor.State
 
 	sidebarWidth float32
 	sideDrag     float32
 	menuQuery    string
+	railExpanded bool
 
 	watchCancel context.CancelFunc
 }
@@ -256,9 +254,11 @@ func (a *App) loadContexts() {
 	if err != nil {
 		a.errText = publicError(err)
 		a.contexts = nil
+		a.contextLabels = nil
 		return
 	}
 	a.contexts = names
+	a.contextLabels = contextDisplayNames(names)
 	a.current = a.session.Current()
 }
 
@@ -429,6 +429,7 @@ func (a *App) switchContext(name string) {
 		a.current = name
 		a.errText = ""
 		a.mu.Unlock()
+		a.loadContexts()
 		a.startWatch(context.Background())
 		a.refreshMetrics(context.Background())
 		a.loadList(a.Selected())
@@ -452,6 +453,8 @@ func (a *App) view(c *ui.Context) {
 	snap := overview.From(a.nodes, a.pods, a.events, a.usage, a.usageErr, time.Now())
 	samples := append([]overview.Sample(nil), a.samples...)
 	current := a.current
+	contexts := a.contexts
+	contextLabels := a.contextLabels
 	errText := a.errText
 	confirm := a.confirm
 	a.mu.Unlock()
@@ -462,8 +465,8 @@ func (a *App) view(c *ui.Context) {
 	shell := ui.Row(c).Fill().AlignItems(ui.Stretch).Background(shellBackdrop(t)).Padding(shellGap).Gap(shellGap)
 	shell.Children(func() {
 		ui.Row(c).Shrink(0).FillHeight().Radius(shellRadius).Clip().Background(t.Surface).Border(1, t.Border).Children(func() {
-			a.drawActivityBar(c, t, current)
-			a.drawSide(c, t)
+			a.drawActivityBar(c, t, current, contexts, contextLabels)
+			a.drawSide(c, t, current)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Radius(shellRadius).Clip().Background(editorCard(t)).Border(1, t.Border).Label("Main content panel").Children(func() {
 			a.drawTabs(c, t)
@@ -479,6 +482,7 @@ func (a *App) view(c *ui.Context) {
 		a.drawDetailPanel(c, t)
 	})
 	a.tabKeys(shell)
+	a.railKeys(shell)
 }
 
 func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, confirm *Confirm, shown overview.Snapshot, samples []overview.Sample, wait overview.Wait) {
@@ -496,9 +500,6 @@ func (a *App) drawPage(c *ui.Context, t *ui.Theme, r *ui.Route, current string, 
 		return
 	}
 	switch {
-	case r.Match("/catalog"):
-		r.Title("Catalog")
-		a.drawCatalog(c, t, current)
 	case r.Match("/settings"):
 		r.Title("Settings")
 		a.drawSettings(c, t)
@@ -586,13 +587,6 @@ func (a *App) togglePage(path string) {
 		return
 	}
 	a.showScreen(id, true)
-}
-
-func (a *App) closeCatalog() {
-	a.ensureTabs()
-	if id, ok := a.tabs.byScreen("catalog"); ok {
-		a.closeTab(id)
-	}
 }
 
 func pagePath(id string) string {

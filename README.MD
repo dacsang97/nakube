@@ -24,10 +24,11 @@ Tests need no cluster and no display. A missing kubeconfig is not a failure.
 
 ## Editor
 
-One tab per screen. A click opens a preview and replaces the previous one. A double click pins it. A drag reorders the strip. Logs, a shell, and YAML open beside the list. Workloads combines live health summaries, readiness charts, per-kind status rails, search, filters, and a sortable inventory. Nodes, Namespaces, Events, generic Kubernetes resources, and Argo resource lists open selected-row details and actions in the shared right shell panel. Closing the last tab returns to Overview.
+One tab per screen. A click opens a preview and replaces the previous one. A double click pins it. A drag reorders the strip. Logs, a shell, and YAML open beside the list. The context rail switches clusters without leaving the current screen; expand it to show context names, with provider details added when short names collide. Workloads combines live health summaries, readiness charts, per-kind status rails, search, filters, and a sortable inventory. Nodes, Namespaces, Events, generic Kubernetes resources, and Argo resource lists open selected-row details and actions in the shared right shell panel. Closing the last tab returns to Overview.
 
 | | macOS | Elsewhere |
 |---|---|---|
+| Toggle context rail | Command-Shift-E | Ctrl-Shift-E |
 | Close | Command-W | Ctrl-W |
 | Previous / next | Command-Option-Left / Right | Ctrl-PageDown / Ctrl-PageUp |
 | Jump | Command-1–8, Command-9 last | Ctrl-1–8, Ctrl-9 last |

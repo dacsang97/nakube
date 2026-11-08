@@ -2,6 +2,8 @@ package desktop
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -425,11 +427,45 @@ func TestEmptyContextView(t *testing.T) {
 	if !tt.HasText("no kube context is configured") {
 		t.Fatalf("texts %q", tt.Texts())
 	}
-	if !tt.HasText("NaKube") || !tt.HasText("Overview") || !tt.HasText("Workloads") || !tt.HasText("Pods") {
+	if _, ok := tt.Find("NaKube"); ok {
+		t.Fatalf("sidebar header still static title, texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("No context"); !ok {
+		t.Fatalf("missing No context header, texts %q", tt.Texts())
+	}
+	if !tt.HasText("Overview") || !tt.HasText("Workloads") || !tt.HasText("Pods") {
 		t.Fatalf("missing menu, texts %q", tt.Texts())
 	}
 	if !tt.HasText("metrics unavailable") {
 		t.Fatalf("missing metrics card, texts %q", tt.Texts())
+	}
+}
+
+func TestSideHeaderNoList(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = nil
+	a.current = "dev"
+	tt := ui.NewTester(a.view, 1100, 720)
+	if _, ok := tt.Find("dev"); !ok {
+		t.Fatalf("missing active context, texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("CONTEXTS"); ok {
+		t.Fatalf("contexts section drawn without contexts, texts %q", tt.Texts())
+	}
+}
+
+func TestRailListsContexts(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = []string{"dev", "prod"}
+	a.current = "dev"
+	tt := ui.NewTester(a.view, 1100, 720)
+	for _, name := range []string{"dev", "prod"} {
+		if _, ok := tt.Find(name); !ok {
+			t.Fatalf("rail misses context %q (label), texts %q", name, tt.Texts())
+		}
+	}
+	if tt.HasText("CONTEXTS") {
+		t.Fatalf("sidebar contexts section survived the move, texts %q", tt.Texts())
 	}
 }
 
@@ -445,14 +481,208 @@ func TestMenuSearchFilters(t *testing.T) {
 	}
 }
 
-func TestCatalogPage(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	a := New(cluster.NewSession())
-	a.router.Push("/catalog")
+func TestSwitchContextRefreshesList(t *testing.T) {
+	dir := t.TempDir()
+	kubeconfig := filepath.Join(dir, "config")
+	body := `
+apiVersion: v1
+kind: Config
+current-context: a
+contexts:
+- name: a
+  context:
+    cluster: c
+    user: u
+- name: b
+  context:
+    cluster: c
+    user: u
+clusters:
+- name: c
+  cluster:
+    server: https://127.0.0.1:6443
+users:
+- name: u
+  user:
+    token: test-token-not-for-logs
+`
+	if err := os.WriteFile(kubeconfig, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KUBECONFIG", kubeconfig)
+
+	s := cluster.NewSession()
+	// Keep Use from writing the picked context into the real per-user state
+	// file; the app reads that file at startup.
+	s.SetStatePath(filepath.Join(dir, "state", "context"))
+	a := New(s)
+	a.contexts = []string{"gone-1", "gone-2"}
+	a.current = "gone-1"
+	a.switchContext("b")
+	// switchContext runs Use on a goroutine; poll briefly for completion.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		a.mu.Lock()
+		cur := a.current
+		names := append([]string(nil), a.contexts...)
+		a.mu.Unlock()
+		if cur == "b" {
+			if len(names) == 0 {
+				t.Fatalf("context list left stale-empty after switch")
+			}
+			for _, gone := range []string{"gone-1", "gone-2"} {
+				for _, name := range names {
+					if name == gone {
+						t.Fatalf("stale context %q survived switch: %v", gone, names)
+					}
+				}
+			}
+			has := func(want string) bool {
+				for _, name := range names {
+					if name == want {
+						return true
+					}
+				}
+				return false
+			}
+			if !has("a") || !has("b") {
+				t.Fatalf("contexts not reloaded from session: %v", names)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("switch did not complete")
+}
+
+func TestRailContextClickStaysOnPage(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	kubeconfig := filepath.Join(dir, "kubeconfig")
+	fixture := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://127.0.0.1:6443
+  name: c
+contexts:
+- context:
+    cluster: c
+    user: u
+  name: dev
+- context:
+    cluster: c
+    user: u
+  name: prod
+current-context: dev
+users:
+- name: u
+  user:
+    token: test-token-not-for-logs
+`
+	if err := os.WriteFile(kubeconfig, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KUBECONFIG", kubeconfig) // wire fixture into loading rules (hermetic: file lives in t.TempDir)
+	s := cluster.NewSession()
+	s.SetStatePath(filepath.Join(dir, "state", "context"))
+	a := New(s)
+	a.contexts = []string{"dev", "prod"}
+	a.current = "dev"
+	a.router.Push("/pods")
 	tt := ui.NewTester(a.view, 1100, 720)
-	for _, want := range []string{"Catalog", "Done", "Add file", "Add pasted kubeconfig", "No contexts", "~/.kube"} {
-		if !tt.HasText(want) {
-			t.Fatalf("missing %q, texts %q", want, tt.Texts())
+	if err := tt.Click("prod"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	switched := false
+	for time.Now().Before(deadline) && !switched {
+		a.mu.Lock()
+		switched = a.current == "prod"
+		a.mu.Unlock()
+		if !switched {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	a.mu.Lock()
+	current := a.current
+	a.mu.Unlock()
+	if current != "prod" {
+		t.Fatalf("context did not switch, current=%q", current)
+	}
+	if got := a.router.Path(); got != "/pods" {
+		t.Fatalf("router moved to %q, want /pods", got)
+	}
+}
+
+func TestCatalogRouteRemoved(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "missing", "config")) // hermetic: no real kubeconfig
+	s := cluster.NewSession()
+	s.SetStatePath(filepath.Join(dir, "state", "context"))
+	a := New(s)
+	a.showScreen("catalog", true)
+	tt := ui.NewTester(a.view, 1100, 720)
+	for _, gone := range []string{"Add file", "Add pasted kubeconfig", "Done"} {
+		if tt.HasText(gone) {
+			t.Fatalf("catalog page element %q still renders, texts %q", gone, tt.Texts())
+		}
+	}
+}
+
+func TestEnsureCatalogKeepsPersistedFiles(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	kubeconfig := filepath.Join(dir, "extra.yaml")
+	fixture := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://127.0.0.1:6443
+  name: c
+contexts:
+- context:
+    cluster: c
+    user: u
+  name: side-ctx
+current-context: side-ctx
+users:
+- name: u
+  user:
+    token: test-token-not-for-logs
+`
+	if err := os.WriteFile(kubeconfig, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	statePath, err := cluster.StatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	catFile := filepath.Join(filepath.Dir(statePath), "catalog.json")
+	if err := os.MkdirAll(filepath.Dir(catFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"pins":["gone"],"files":["` + kubeconfig + `"]}`
+	if err := os.WriteFile(catFile, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := cluster.NewSession()
+	a := New(s)
+	a.ensureCatalog()
+	a.syncCatalog()
+	a.mu.Lock()
+	have := append([]string(nil), a.contexts...)
+	a.mu.Unlock()
+	for _, want := range []string{"side-ctx"} {
+		found := false
+		for _, name := range have {
+			if name == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("persisted file context %q missing, have %q", want, have)
 		}
 	}
 }
@@ -494,9 +724,6 @@ func TestSidebarIcons(t *testing.T) {
 	if len(seen) < 20 {
 		t.Fatalf("only %d distinct icons", len(seen))
 	}
-	if IconNamed("plus") == nil {
-		t.Fatal("the rail has no plus icon")
-	}
 }
 
 func TestSidebarScrolls(t *testing.T) {
@@ -528,3 +755,113 @@ func TestPublicErrorHidesToken(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+func TestRailExpandedShowsShortNames(t *testing.T) {
+	exact := func(tt *ui.Tester, want string) bool {
+		for _, text := range tt.Texts() {
+			if text == want {
+				return true
+			}
+		}
+		return false
+	}
+	a := New(cluster.NewSession())
+	a.contexts = []string{"arn:aws:eks:ap-southeast-1:123456789012:cluster/prod", "kind-local"}
+	a.current = "kind-local"
+	tt := ui.NewTester(a.view, 1100, 720)
+	if exact(tt, "prod") || exact(tt, "Collapse contexts") {
+		t.Fatalf("compact rail drew context names, texts %q", tt.Texts())
+	}
+
+	a = New(cluster.NewSession())
+	a.contexts = []string{"arn:aws:eks:ap-southeast-1:123456789012:cluster/prod", "kind-local"}
+	a.current = "kind-local"
+	a.railExpanded = true
+	tt = ui.NewTester(a.view, 1100, 720)
+	for _, want := range []string{"prod", "kind-local", "Settings", "Collapse contexts"} {
+		if !exact(tt, want) {
+			t.Fatalf("expanded rail misses %q, texts %q", want, tt.Texts())
+		}
+	}
+	if _, ok := tt.Find("arn:aws:eks:ap-southeast-1:123456789012:cluster/prod"); !ok {
+		t.Fatalf("expanded row lost its full-name label")
+	}
+}
+
+func TestRailButtonsMeetDesktopHitArea(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = []string{"dev"}
+	a.current = "dev"
+	tt := ui.NewTester(a.view, 1100, 720)
+	compact, ok := tt.Find("Expand contexts")
+	if !ok {
+		t.Fatal("compact rail toggle missing")
+	}
+	if compact.W < activitySlot || compact.H < activitySlot {
+		t.Fatalf("compact target is %gx%g, want at least %dx%d", compact.W, compact.H, activitySlot, activitySlot)
+	}
+
+	a.railExpanded = true
+	tt = ui.NewTester(a.view, 1100, 720)
+	expanded, ok := tt.Find("Collapse contexts")
+	if !ok {
+		t.Fatal("expanded rail toggle missing")
+	}
+	if expanded.H < activitySlot {
+		t.Fatalf("expanded target is %gpx high, want at least %dpx", expanded.H, activitySlot)
+	}
+}
+
+func TestRailDisambiguatesDuplicateShortNames(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.contexts = []string{
+		"arn:aws:eks:ap-southeast-1:111111111111:cluster/prod",
+		"arn:aws:eks:us-east-1:222222222222:cluster/prod",
+	}
+	a.railExpanded = true
+	tt := ui.NewTester(a.view, 1100, 720)
+	for _, want := range []string{
+		"prod · ap-southeast-1 · 111111111111",
+		"prod · us-east-1 · 222222222222",
+	} {
+		if !tt.HasText(want) {
+			t.Fatalf("expanded rail misses disambiguated label %q, texts %q", want, tt.Texts())
+		}
+	}
+}
+
+func TestRailToggleSavesState(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	a := New(cluster.NewSession())
+	a.contexts = []string{"dev"}
+	a.current = "dev"
+	a.router.Push("/pods")
+	tt := ui.NewTester(a.view, 1100, 720)
+	if err := tt.Click("Expand contexts"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.railExpanded {
+		t.Fatal("click did not expand the rail")
+	}
+	if got := a.router.Path(); got != "/pods" {
+		t.Fatalf("toggle moved the router to %q", got)
+	}
+	path, err := railPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !readRail(path) {
+		t.Fatal("expanded state not saved")
+	}
+	b := New(cluster.NewSession())
+	b.RestoreRail()
+	if !b.railExpanded {
+		t.Fatal("restore lost the expanded state")
+	}
+	a.toggleRail()
+	if readRail(path) {
+		t.Fatal("collapsed state not saved")
+	}
+}

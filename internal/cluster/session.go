@@ -70,6 +70,14 @@ func StatePath() (string, error) {
 	return filepath.Join(dir, "nakube", "context"), nil
 }
 
+// SetStatePath overrides the file Use writes. Tests call it so a switch in
+// a test session never touches the real per-user state file.
+func (s *Session) SetStatePath(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.statePath = path
+}
+
 // ReadSelectedContext reads the context name Use wrote. ok is false when the
 // file is absent or empty. The error never includes file contents.
 func ReadSelectedContext(path string) (string, bool, error) {

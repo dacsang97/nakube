@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ type shellDetailPanel struct {
 // center card; selected resources add an aligned detail card on the right.
 const (
 	activityBarW   = 48
+	railExpandedW  = 200
+	railLabelMinW  = 120
 	activitySlot   = 40
 	defaultSidebar = 240
 	minSidebar     = 180
@@ -133,38 +136,70 @@ func (a *App) sideWidth() float32 {
 	return a.sidebarWidth
 }
 
-func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme, current string) {
+func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme, current string, contexts, labels []string) {
 	a.ensureCatalog()
 	page := ""
 	if a.router != nil {
 		page = screenID(a.router.Path())
 	}
-	ui.Column(c).Width(activityBarW).FillHeight().Shrink(0).Background(t.Surface).BorderEndWidth(1).BorderColor(t.Border).Children(func() {
-		ui.Scroll(c).Grow(1).FillHeight().Children(func() {
-			ui.Column(c).Padding(4, 0).Gap(4).AlignItems(ui.Center).Children(func() {
-				for _, name := range a.catalogPins {
-					a.pinButton(c, t, name, name == current)
+	target := float32(activityBarW)
+	if a.railExpanded {
+		target = railExpandedW
+	}
+	bar := ui.Column(c).FillHeight().Shrink(0).Clip().Background(t.Surface).BorderEndWidth(1).BorderColor(t.Border)
+	w := bar.Animate("rail-width", target, 150*time.Millisecond)
+	// Wide rows follow the animated width in both directions, so their labels
+	// do not disappear before the rail reaches them while collapsing.
+	wide := w >= railLabelMinW
+	if len(labels) != len(contexts) {
+		labels = contextDisplayNames(contexts)
+	}
+	bar.Width(w).Children(func() {
+		ui.Scroll(c).Grow(1).FillHeight().Shrink(0).Children(func() {
+			ui.Column(c).Padding(4, 0).Gap(4).Children(func() {
+				for i, name := range contexts {
+					a.railContextButton(c, t, name, labels[i], name == current, wide)
 				}
-				a.activityButton(c, t, "plus", "Catalog", page == "catalog", func() {
-					a.togglePage("/catalog")
-				})
 			})
 		})
-		ui.Column(c).Shrink(0).Padding(4, 0, 8, 0).AlignItems(ui.Center).Children(func() {
-			a.activityButton(c, t, "settings", "Settings", page == "settings", func() {
+		ui.Column(c).Shrink(0).Padding(4, 0).Gap(4).Children(func() {
+			a.activityButton(c, t, "settings", "Settings", "Settings", page == "settings", wide, func() {
 				a.togglePage("/settings")
 			})
+			icon, tip := "panel-left-open", "Expand contexts"
+			if a.railExpanded {
+				icon, tip = "panel-left-close", "Collapse contexts"
+			}
+			a.activityButton(c, t, icon, tip+" ("+railShortcutHint()+")", tip, false, wide, a.toggleRail)
 		})
 	})
 }
 
-func (a *App) activityButton(c *ui.Context, t *ui.Theme, icon, tip string, active bool, fn func()) {
-	slot := ui.Box(c).Height(activitySlot).AlignSelf(ui.Stretch).AlignItems(ui.Center).Justify(ui.Center)
-	slot.Children(func() {
+// railSlot and railButton shape the rail's buttons: a 40px target centered
+// in the compact rail and a full-width 40px row in the expanded one. The icon
+// keeps the same x in both, so it does not jump while the rail animates.
+func railSlot(c *ui.Context, expanded bool) ui.Element {
+	slot := ui.Box(c).Height(activitySlot).AlignSelf(ui.Stretch).AlignItems(ui.Center)
+	if expanded {
+		return slot.Padding(0, 8)
+	}
+	return slot.Justify(ui.Center)
+}
+
+func railButton(c *ui.Context, expanded bool) ui.Element {
+	if expanded {
+		return ui.Button(c, "").Height(activitySlot).AlignSelf(ui.Stretch).Padding(0, 6).Gap(10).Radius(6).Border(0, ui.Transparent).AlignItems(ui.Center).Justify(ui.Start)
+	}
+	return ui.Button(c, "").Size(activitySlot, activitySlot).Padding(0).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
+}
+
+func (a *App) activityButton(c *ui.Context, t *ui.Theme, icon, tip, label string, active, expanded bool, fn func()) {
+	railSlot(c, expanded).Children(func() {
 		if active {
 			ui.Box(c).Absolute().Left(0).Top(9).Width(2).Height(22).Radius(1).Background(t.Accent)
 		}
-		btn := ui.Button(c, "").Size(32, 32).Padding(0).Radius(6).AlignItems(ui.Center).Justify(ui.Center).Tooltip(tip)
+		btn := railButton(c, expanded)
+		btn.Tooltip(tip).Label(label)
 		if active {
 			btn.TextColor(t.Text).Background(t.SurfacePressed)
 		} else {
@@ -175,6 +210,9 @@ func (a *App) activityButton(c *ui.Context, t *ui.Theme, icon, tip string, activ
 		}
 		btn.Children(func() {
 			ui.Icon(c, IconNamed(icon)).Size(20, 20)
+			if expanded {
+				ui.Text(c, label).FontSize(13).SingleLine().Grow(1).MinWidth(0)
+			}
 		})
 		if btn.Clicked() {
 			fn()
@@ -182,33 +220,71 @@ func (a *App) activityButton(c *ui.Context, t *ui.Theme, icon, tip string, activ
 	})
 }
 
-func (a *App) pinButton(c *ui.Context, t *ui.Theme, name string, active bool) {
-	ui.Box(c).Height(activitySlot).AlignSelf(ui.Stretch).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-		btn := ui.Button(c, "").Size(32, 32).Padding(0).Radius(8).AlignItems(ui.Center).Justify(ui.Center).Tooltip(name).Label(name)
-		btn.Border(0, ui.Transparent)
+func (a *App) railContextButton(c *ui.Context, t *ui.Theme, name, displayName string, active, expanded bool) {
+	railSlot(c, expanded).Children(func() {
+		btn := railButton(c, expanded)
+		btn.Tooltip(name).Label(name)
 		if active {
-			btn.Background(t.Accent).TextColor(t.AccentText)
+			btn.TextColor(t.Text).Background(t.SurfacePressed)
 		} else {
-			btn.Background(t.SurfacePressed).TextColor(t.Text)
+			btn.TextColor(t.TextMuted)
+			if btn.Hovered() {
+				btn.Background(t.SurfaceHover)
+			}
 		}
 		btn.Children(func() {
-			ui.Text(c, railLabel(name)).FontSize(13).FontWeight(650)
+			ui.Icon(c, IconNamed("server")).Size(20, 20).TextColor(contextColor(name))
+			if expanded {
+				ui.Text(c, displayName).FontSize(13).SingleLine().Grow(1).MinWidth(0)
+				if active {
+					ui.Box(c).Size(6, 6).Shrink(0).Radius(3).Background(t.Success)
+				}
+			} else if active {
+				// Top-right corner of the button, clear of the icon; the ring
+				// matches the pressed background so it reads as a badge.
+				ui.Box(c).Absolute().Top(1).Right(1).Size(8, 8).Radius(4).Background(t.Success).Border(1.5, t.SurfacePressed)
+			}
 		})
-		if btn.Clicked() {
+		if !active && btn.Clicked() {
 			a.switchContext(name)
-			a.openPage("overview")
 		}
 	})
 }
 
-func (a *App) drawSide(c *ui.Context, t *ui.Theme) {
+func railShortcutHint() string {
+	if runtime.GOOS == "darwin" {
+		return "⌘⇧E"
+	}
+	return "Ctrl+Shift+E"
+}
+
+// railKeys toggles the rail from the keyboard.
+func (a *App) railKeys(e ui.Element) {
+	mods := ui.Ctrl | ui.Shift
+	if runtime.GOOS == "darwin" {
+		mods = ui.Cmd | ui.Shift
+	}
+	if e.Shortcut(mods, ui.KeyE) {
+		a.toggleRail()
+	}
+}
+
+func (a *App) drawContextHeader(c *ui.Context, t *ui.Theme, current string) {
+	if current == "" {
+		ui.Text(c, "No context").FontSize(13).FontWeight(650).TextColor(t.TextMuted).SingleLine()
+		return
+	}
+	ui.Text(c, current).FontSize(13).FontWeight(650).SingleLine().Tooltip(current)
+}
+
+func (a *App) drawSide(c *ui.Context, t *ui.Theme, current string) {
 	page := ""
 	if a.router != nil {
 		page = screenID(a.router.Path())
 	}
 	ui.Column(c).Width(a.sideWidth()).Shrink(0).FillHeight().Background(t.Surface).Children(func() {
 		ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 12).AlignItems(ui.Center).Background(tabInactive(t)).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Label("Sidebar header").Children(func() {
-			ui.Text(c, "NaKube").FontSize(13).FontWeight(650).SingleLine()
+			a.drawContextHeader(c, t, current)
 		})
 		ui.Column(c).Shrink(0).Padding(8, 8, 4, 8).Children(func() {
 			ui.TextInput(c, &a.menuQuery).Placeholder("Search").Grow(1)

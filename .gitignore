@@ -13,3 +13,5 @@ DerivedData/
 
 .DS_Store
 /dist/
+/docs/
+plans/
