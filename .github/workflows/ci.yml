@@ -39,6 +39,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
+          install-mode: goinstall
           args: --timeout=5m
           # Main writes the linter cache. Other refs only restore it.
           skip-save-cache: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
