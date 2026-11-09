@@ -80,7 +80,7 @@ struct ContextsHomeView: View {
             }
             .navigationTitle("Contexts")
             .navigationDestination(for: ClusterContext.self) { context in
-                ClusterOverviewView(host: host, context: context)
+                ClusterHomeView(host: host, context: context)
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
