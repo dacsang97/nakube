@@ -92,6 +92,7 @@ func (f *fakeBackend) DeletePod(_ context.Context, contextName, _, _ string) err
 	f.mutationContext = contextName
 	return nil
 }
+
 func (f *fakeBackend) ArgoApplications(context.Context) ([]ArgoApp, error) {
 	return []ArgoApp{{Name: "shop", Namespace: "argo", Sync: "Synced", Health: "Healthy"}}, nil
 }

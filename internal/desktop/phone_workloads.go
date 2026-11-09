@@ -320,7 +320,7 @@ func phoneCronJob(item *batchv1.CronJob) remote.Workload {
 	}
 	lastSchedule := "Never"
 	if item.Status.LastScheduleTime != nil {
-		lastSchedule = item.Status.LastScheduleTime.Time.Format("2006-01-02 15:04:05Z07:00")
+		lastSchedule = item.Status.LastScheduleTime.Format("2006-01-02 15:04:05Z07:00")
 	}
 	return remote.Workload{
 		Resource: "cronjobs", Kind: "CronJob", Namespace: item.Namespace, Name: item.Name,

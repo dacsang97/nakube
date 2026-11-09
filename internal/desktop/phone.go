@@ -9,9 +9,10 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/dacsang97/nakube/internal/remote"
 	"github.com/egoist/mygo/ui"
 	qrcode "github.com/skip2/go-qrcode"
+
+	"github.com/dacsang97/nakube/internal/remote"
 )
 
 // Phone adapts the desktop session for the Tailscale listener.
