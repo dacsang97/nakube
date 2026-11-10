@@ -1,5 +1,5 @@
 // Package metrics is a resource's Metrics block: a range, a tab per
-// resource, and a chart of Prometheus series, as Lens shows it.
+// resource, and a chart of Prometheus series.
 package metrics
 
 import (

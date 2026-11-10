@@ -7,7 +7,7 @@ import (
 )
 
 // contextPalette holds the fixed identity colors for kube contexts, in the
-// spirit of Lens's colored cluster icons. Mid luminance so they read on both
+// spirit of colored cluster icons. Mid luminance so they read on both
 // light and dark appearances.
 var contextPalette = [8]ui.Color{
 	ui.Hex("#ef4444"), // red

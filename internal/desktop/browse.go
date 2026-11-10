@@ -630,7 +630,7 @@ func (a *App) selectionForFilter(filter string) string {
 	return filter
 }
 
-// drawNamespaceSelector renders the Lens-style namespace dropdown beside
+// drawNamespaceSelector renders the namespace dropdown beside
 // list titles. Namespaces come from the informer cache, sorted by name.
 func (a *App) drawNamespaceSelector(c *ui.Context, _ *ui.Theme) {
 	opts := a.namespaceSelectOptions()

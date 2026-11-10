@@ -18,7 +18,7 @@ type Trace struct {
 	Line   bool
 }
 
-// Cursor is the hover rule and marker, Lens's orange.
+// Cursor is the hover rule and marker.
 var Cursor = ui.Hex("#f5a623")
 
 // MetricsHigh is the top of the value axis: the highest real value with
@@ -38,7 +38,7 @@ func MetricsHigh(series []Trace) float64 {
 	return hi * 1.1
 }
 
-// MetricsChart draws series over shared slots, as Lens's metrics bars:
+// MetricsChart draws series over shared slots:
 // values on the right, times below, grid lines across. hover is the
 // chosen slot, or -1: the pointer and the arrows move it, and it shows an
 // orange rule, a diamond on the first bar series, and the slot's values.
@@ -121,7 +121,7 @@ func MetricsChart(c *ui.Context, t *ui.Theme, series []Trace, format func(float6
 	}).Height(160).Gap(6)
 }
 
-// MetricsLegend lists the series in a row, as Lens does under its chart.
+// MetricsLegend lists the series in a row under the chart.
 func MetricsLegend(c *ui.Context, t *ui.Theme, series []Trace) {
 	ui.Row(c).Gap(14).Justify(ui.Center).Wrap().Children(func() {
 		for _, s := range series {

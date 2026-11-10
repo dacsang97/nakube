@@ -27,7 +27,7 @@ var ErrPromNotFound = errors.New("prometheus not found")
 var ErrPromListDenied = errors.New("cannot list services to find prometheus")
 
 // PromSource is a Prometheus service reached through the API server's
-// service proxy, as Lens reaches it. Port is a number or a port name.
+// service proxy. Port is a number or a port name.
 type PromSource struct {
 	Namespace string
 	Service   string

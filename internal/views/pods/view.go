@@ -110,7 +110,7 @@ func usage(c *ui.Context, t *ui.Theme, known bool, text string, on bool) {
 }
 
 // containerDots draws a square per container. Init containers are hollow,
-// so the app containers stand out as Lens shows them.
+// so the app containers stand out.
 func containerDots(c *ui.Context, t *ui.Theme, dots []Dot) {
 	ui.Row(c).Gap(3).AlignItems(ui.Center).Children(func() {
 		for _, d := range dots {

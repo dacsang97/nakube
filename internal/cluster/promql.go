@@ -29,8 +29,8 @@ type MetricQuery struct {
 	Line bool
 }
 
-// PodQueries are the series for pods in one namespace, the queries the Lens
-// operator provider runs: cAdvisor for usage, kube-state-metrics for
+// PodQueries are the series for pods in one namespace, the queries the
+// metrics operator provider runs: cAdvisor for usage, kube-state-metrics for
 // requests and limits. An empty container is every container in the pods.
 // No pods is no query, not a query that matches everything.
 func PodQueries(tab, namespace string, pods []string, container string, step time.Duration) []MetricQuery {
@@ -87,7 +87,7 @@ func podPattern(pods []string) string {
 	return "^(" + strings.Join(quoted, "|") + ")$"
 }
 
-// MetricStep keeps a range near 60 slots, as Lens does, and never under
+// MetricStep keeps a range near 60 slots, and never under
 // a minute: 1h is 60s, 6h is 6m, 24h is 24m, 7d is 168m.
 func MetricStep(rng time.Duration) time.Duration {
 	step := (rng / 60).Round(time.Second)

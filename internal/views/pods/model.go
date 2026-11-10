@@ -1,5 +1,5 @@
 // Package pods is the Pods screen: a sortable, searchable list with the
-// columns Lens shows.
+// columns shown.
 package pods
 
 import (
@@ -383,7 +383,7 @@ func sortRows(rows []Row, column string, desc bool) {
 	})
 }
 
-// CPU is cores with three decimals, as Lens writes them.
+// CPU is cores with three decimals.
 func CPU(cores float64) string {
 	return strconv.FormatFloat(cores, 'f', 3, 64)
 }
