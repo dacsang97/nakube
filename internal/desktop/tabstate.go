@@ -64,6 +64,7 @@ type tabBody struct {
 	listSort    ui.SortOrder
 	listColumns ui.TableLayout
 	listKey     string
+	listReveal  bool
 
 	argoApps          []cluster.ArgoApp
 	argoSets          []cluster.ArgoApplicationSet
@@ -216,6 +217,7 @@ func saveInto(a *App, b *tabBody) {
 	b.listSort = a.listSort
 	b.listColumns = cloneLayout(a.listColumns)
 	b.listKey = a.listKey
+	b.listReveal = a.listReveal
 	b.argoApps = a.argoApps
 	b.argoSets = a.argoSets
 	b.argoProjects = a.argoProjects
@@ -276,6 +278,7 @@ func loadFrom(a *App, b *tabBody) {
 	a.listSort = b.listSort
 	a.listColumns = cloneLayout(b.listColumns)
 	a.listKey = b.listKey
+	a.listReveal = b.listReveal
 	a.listState = ui.ListState{}
 	a.argoApps = b.argoApps
 	a.argoSets = b.argoSets

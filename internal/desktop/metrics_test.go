@@ -133,9 +133,11 @@ func TestMetricsEvictsAndForgets(t *testing.T) {
 
 func TestMetricsStaleFetchLandsNowhere(t *testing.T) {
 	release := make(chan struct{})
+	started := make(chan struct{})
 	var calls atomic.Int32
 	a := metricsApp(func(context.Context, metricsKey) metrics.View {
 		if calls.Add(1) == 1 {
+			close(started)
 			<-release
 			return ready("Old")
 		}
@@ -143,6 +145,7 @@ func TestMetricsStaleFetchLandsNowhere(t *testing.T) {
 	})
 	key := metricsKey{Pod: "web", Tab: cluster.MetricCPU, Range: "1h"}
 	a.metricsView(key, time.Now())
+	<-started
 	a.mu.Lock()
 	a.forgetMetricsLocked()
 	a.mu.Unlock()

@@ -38,6 +38,10 @@ One tab per screen. A click opens a preview and replaces the previous one. A dou
 
 **Catalog** always loads the built-in kubeconfig directory and can sync additional kubeconfig files or folders. **Paste kubeconfig** validates YAML before storing it as a private `0600` file; synced sources can be removed without deleting the original file or folder.
 
+## Pods
+
+The Pods list shows Lens's columns: Name, Namespace, Containers, CPU, Memory, Restarts, Controlled By, Node, QoS, Age, and Status. Each column but Containers sorts. CPU and memory come from metrics-server every 15 seconds while the list is shown, and read N/A when it has no sample. Status reads as kubectl's. Controlled By and Node open their Workloads or Nodes row in a pinned tab; an owner of another kind, as a custom resource, is plain text.
+
 ## Metrics
 
 A pod's details open on a Metrics block, as Lens shows it: CPU, memory, network, and filesystem over 1h, 6h, 24h, or 7d, about 60 bars per range. Point at a bar, or use the arrow keys, for its values.
