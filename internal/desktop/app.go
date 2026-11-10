@@ -150,6 +150,7 @@ type App struct {
 	listSort          ui.SortOrder
 	listColumns       ui.TableLayout
 	listKey           string
+	listReveal        bool
 	listState         ui.ListState
 	detailPanel       *shellDetailPanel
 	detailPanelOpen   bool
@@ -187,6 +188,12 @@ type App struct {
 	promDraftFor  string
 	promErr       string
 	promErrFor    string
+
+	podUsage      map[string]cluster.PodUsage
+	podUsageAt    time.Time
+	podUsageBusy  bool
+	podUsageGen   int
+	podUsageFetch podUsageFetcher
 }
 
 // New returns an app on session. The window opens before the shell import
@@ -314,6 +321,7 @@ func (a *App) startWatch(ctx context.Context) {
 	a.watchSettled = false
 	a.metricsSeen = false
 	a.forgetMetricsLocked()
+	a.forgetPodUsageLocked()
 	a.mu.Unlock()
 	a.invalidate()
 	if err := a.session.Watch(wctx, a.onWatch); err != nil {
