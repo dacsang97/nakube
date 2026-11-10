@@ -143,6 +143,9 @@ func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSna
 			onEdit:   onEdit,
 			onRemove: onRemove,
 			draw: func(c *ui.Context, t *ui.Theme) {
+				if row.Identity.Kind == "Pod" {
+					a.drawPodMetrics(c, t, row.Namespace, row.Name)
+				}
 				resource.Detail(c, t, list, selection.Index)
 			},
 		})
