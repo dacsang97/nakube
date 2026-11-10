@@ -175,6 +175,18 @@ type App struct {
 	settingsPage string
 
 	watchCancel context.CancelFunc
+
+	metricsCache  map[metricsKey]*metricsEntry
+	metricsUI     metricsBlock
+	metricsShown  metricsShown
+	metricsFetch  metricsFetcher
+	promFound     map[string]promFound
+	promOverrides map[string]string
+	promLoaded    bool
+	promDraft     string
+	promDraftFor  string
+	promErr       string
+	promErrFor    string
 }
 
 // New returns an app on session. The window opens before the shell import
@@ -301,6 +313,7 @@ func (a *App) startWatch(ctx context.Context) {
 	a.seen = map[string]bool{}
 	a.watchSettled = false
 	a.metricsSeen = false
+	a.forgetMetricsLocked()
 	a.mu.Unlock()
 	a.invalidate()
 	if err := a.session.Watch(wctx, a.onWatch); err != nil {

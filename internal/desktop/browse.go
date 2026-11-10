@@ -798,6 +798,9 @@ func (a *App) drawWorkloads(c *ui.Context, t *ui.Theme) {
 		onEdit:   onEdit,
 		onRemove: onRemove,
 		draw: func(c *ui.Context, t *ui.Theme) {
+			if item.Kind == "Pod" {
+				a.drawPodMetrics(c, t, item.Namespace, item.Name)
+			}
 			workloads.Detail(c, t, item, time.Now())
 		},
 	})

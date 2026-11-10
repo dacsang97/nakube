@@ -20,6 +20,7 @@ type settingsNavItem struct {
 var settingsNav = []settingsNavItem{
 	{ID: "catalog", Label: "Catalog", Icon: "database"},
 	{ID: "theme", Label: "Theme", Icon: "settings"},
+	{ID: "metrics", Label: "Metrics", Icon: "gauge"},
 	{ID: "mobile", Label: "Na Kube Mobile", Icon: "server"},
 }
 
@@ -84,6 +85,8 @@ func (a *App) drawSettings(c *ui.Context, t *ui.Theme) {
 		if next := settings.FromIndex(index); next != a.appearance {
 			a.applyAppearance(next, true)
 		}
+	case "metrics":
+		a.drawMetricsSettings(c, t)
 	case "mobile":
 		a.mu.Lock()
 		address, errText, qr := a.mobileAddress, a.mobileErr, a.mobileQR
@@ -232,4 +235,28 @@ func (a *App) finishCatalogChange(err error) {
 	}
 	a.mu.Unlock()
 	a.invalidate()
+}
+
+// drawMetricsSettings edits the open context's Prometheus service.
+func (a *App) drawMetricsSettings(c *ui.Context, t *ui.Theme) {
+	contextName := a.session.Current()
+	a.mu.Lock()
+	saved := a.promOverridesLocked()[contextName]
+	a.mu.Unlock()
+	if a.promDraftFor != contextName {
+		a.promDraftFor, a.promDraft, a.promErr = contextName, saved, ""
+	}
+	shownErr := ""
+	if a.promErrFor == a.promDraft {
+		shownErr = a.promErr
+	}
+	prom := settings.Prometheus{Context: contextName, Draft: &a.promDraft, Saved: saved, Err: shownErr}
+	if settings.DrawMetrics(c, t, prom) {
+		a.promErr, a.promErrFor = a.savePromOverride(contextName, a.promDraft), a.promDraft
+		if a.promErr == "" {
+			a.mu.Lock()
+			a.promDraft = a.promOverridesLocked()[contextName]
+			a.mu.Unlock()
+		}
+	}
 }
