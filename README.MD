@@ -38,6 +38,12 @@ One tab per screen. A click opens a preview and replaces the previous one. A dou
 
 **Catalog** always loads the built-in kubeconfig directory and can sync additional kubeconfig files or folders. **Paste kubeconfig** validates YAML before storing it as a private `0600` file; synced sources can be removed without deleting the original file or folder.
 
+## Metrics
+
+A pod's details open on a Metrics block, as Lens shows it: CPU, memory, network, and filesystem over 1h, 6h, 24h, or 7d, about 60 bars per range. Point at a bar, or use the arrow keys, for its values.
+
+Data comes from Prometheus through the API server's service proxy, so the account needs `services/proxy`. The app looks for `prometheus-operated`, `kube-prometheus-stack-prometheus`, `prometheus-kube-prometheus-prometheus`, `prometheus-server`, and `prometheus`, with the `monitoring` namespace first. **Settings → Metrics** can name another service, as `namespace/service:port`, for each context. Usage is cAdvisor with its `container` label. Request and limit lines come from kube-state-metrics, and are left out when it is not installed. The chart fetches again every minute while it is shown.
+
 ## Checks
 
 CI runs these on pull requests and on `main`. They do not package the app.
