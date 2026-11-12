@@ -65,3 +65,64 @@ func TestDrawOwnerWithoutScreenIsText(t *testing.T) {
 		t.Fatal("a custom owner opened a screen")
 	}
 }
+
+func TestPodLinksKeyboardAndHitArea(t *testing.T) {
+	p := pod("web", func(p *corev1.Pod) {
+		p.OwnerReferences = []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "web-1"}}
+	})
+	var opened []string
+	tt, _ := drawn(t, Build([]*corev1.Pod{p}, nil, "", "", false), func(screen, key string) {
+		opened = append(opened, screen+"/"+key)
+	})
+	// Search and the table are also tab stops. Enter on the table must
+	// not follow a link; the first link reached is the owner.
+	for range 8 {
+		tt.Key(0, ui.KeyTab)
+		tt.Key(0, ui.KeyEnter)
+		if len(opened) > 0 {
+			break
+		}
+	}
+	if len(opened) != 1 || opened[0] != "workloads/replicasets/shop/web-1" {
+		t.Fatalf("keyboard owner navigation: %v", opened)
+	}
+	tt.Key(0, ui.KeyTab)
+	tt.Key(0, ui.KeySpace)
+	if len(opened) != 2 || opened[1] != "nodes/node-a" {
+		t.Fatalf("keyboard node navigation: %v", opened)
+	}
+	for _, label := range []string{"Open ReplicaSet web-1", "Open node-a"} {
+		r, ok := tt.Find(label)
+		if !ok || r.W < 40 || r.H < 40 {
+			t.Fatalf("%s hit area: %+v, found=%v", label, r, ok)
+		}
+		// Clicking near the edge, away from the text, still activates.
+		tt.ClickAt(r.X+r.W-2, r.Y+r.H-2)
+	}
+	if len(opened) != 4 || opened[2] != opened[0] || opened[3] != opened[1] {
+		t.Fatalf("expanded hit areas opened wrong targets: %v", opened)
+	}
+}
+
+func TestContainerIndicatorsWrapWithoutHidingFailures(t *testing.T) {
+	p := pod("web", func(p *corev1.Pod) {
+		for i := range 10 {
+			p.Spec.Containers = append(p.Spec.Containers, corev1.Container{Name: string(rune('a' + i))})
+		}
+		p.Status.ContainerStatuses = append(p.Status.ContainerStatuses, corev1.ContainerStatus{
+			Name: "j", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+		})
+	})
+	tt, _ := drawn(t, Build([]*corev1.Pod{p}, nil, "", "", false), nil)
+	for _, width := range []int{1600, 800} {
+		tt.SetSize(width, 500)
+		first, ok := tt.Find("app: running, ready")
+		if !ok {
+			t.Fatal("missing first container")
+		}
+		last, ok := tt.Find("j: waiting, CrashLoopBackOff")
+		if !ok || last.Y <= first.Y || last.X < first.X || last.X+last.W > first.X+76 || last.Y+last.H > 500 {
+			t.Fatalf("failure indicator hidden at width %d: first=%+v last=%+v found=%v", width, first, last, ok)
+		}
+	}
+}
