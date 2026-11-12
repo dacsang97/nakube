@@ -56,7 +56,7 @@ func columns() []kit.Column {
 		{ID: ColContainers, Title: "Containers", Width: 96},
 		{ID: ColCPU, Title: "CPU", Width: 72, Align: ui.End, Sortable: true},
 		{ID: ColMemory, Title: "Memory", Width: 84, Align: ui.End, Sortable: true},
-		{ID: ColRestarts, Title: "Restarts", Width: 72, Align: ui.End, Sortable: true},
+		{ID: ColRestarts, Title: "Restarts", Width: 96, Align: ui.End, Sortable: true},
 		{ID: ColOwner, Title: "Controlled By", Width: 110, Sortable: true},
 		{ID: ColNode, Title: "Node", Width: 160, Sortable: true},
 		{ID: ColQoS, Title: "QoS", Width: 90, Sortable: true},
@@ -112,7 +112,7 @@ func usage(c *ui.Context, t *ui.Theme, known bool, text string, on bool) {
 // containerDots draws a square per container. Init containers are hollow,
 // so the app containers stand out.
 func containerDots(c *ui.Context, t *ui.Theme, dots []Dot) {
-	ui.Row(c).Gap(3).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Grow(1).MinWidth(0).Wrap().Gap(3).AlignItems(ui.Center).Children(func() {
 		for _, d := range dots {
 			color := dotColor(t, d.State)
 			box := ui.Box(c).Size(8, 8).Radius(1).Shrink(0).Tooltip(d.Text).Label(d.Text)
@@ -144,15 +144,21 @@ func link(c *ui.Context, t *ui.Theme, text, tip, screen, key string, on bool, on
 		kit.Line(c, t, text, kit.ToneNone, on)
 		return
 	}
-	e := ui.Text(c, text).SingleLine().Tooltip(tip).Label("Open " + tip)
+	e := ui.ButtonBase(c).Role(ui.RoleButton).Grow(1).Shrink(1).MinWidth(40).MinHeight(40).
+		Justify(ui.Start).Padding(1).Radius(4).Border(1, ui.Transparent).Tooltip(tip).Label("Open " + tip)
 	color := t.Accent
 	if on {
 		color = t.AccentText
 	} else if e.Hovered() {
 		color = t.AccentHover
 	}
-	e.TextColor(color)
-	if e.Clicked() {
+	e.Children(func() {
+		ui.Text(c, text).SingleLine().TextColor(color)
+	})
+	// The table owns Enter for row submission; the focused link must
+	// claim it more narrowly. Register both keys on every frame.
+	enter, space := e.Shortcut(0, ui.KeyEnter), e.Shortcut(0, ui.KeySpace)
+	if e.Clicked() || enter || space {
 		onOpen(screen, key)
 	}
 }

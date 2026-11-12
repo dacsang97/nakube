@@ -131,3 +131,51 @@ func TestDrawStates(t *testing.T) {
 		t.Fatalf("empty view %v", tt.Texts())
 	}
 }
+
+func TestMetricTabsKeyboardAndNarrowHitAreas(t *testing.T) {
+	tab, rng, hover := DefaultTab, DefaultRange, 12
+	tt := ui.NewTester(func(c *ui.Context) {
+		Draw(c, c.Theme(), View{Tab: tab}, &tab, &rng, &hover, Icons{})
+	}, 320, 500)
+	for _, label := range []string{"CPU", "Memory", "Network", "Filesystem", "Range"} {
+		r, ok := tt.Find(label)
+		if !ok || r.W < 40 || r.H < 40 || r.X < 0 || r.X+r.W > 320 {
+			t.Fatalf("%s hit area is clipped or too small: %+v, found=%v", label, r, ok)
+		}
+	}
+	if err := tt.Click("Memory"); err != nil {
+		t.Fatal(err)
+	}
+	if tab != cluster.MetricMemory || hover != -1 {
+		t.Fatalf("click: tab=%s hover=%d", tab, hover)
+	}
+	tt.Key(0, ui.KeyRight)
+	if tab != cluster.MetricNetwork {
+		t.Fatalf("right arrow selected %s", tab)
+	}
+	tt.Key(0, ui.KeyEnd)
+	if tab != cluster.MetricFilesystem {
+		t.Fatalf("End selected %s", tab)
+	}
+	tt.Key(0, ui.KeyHome)
+	if tab != cluster.MetricCPU {
+		t.Fatalf("Home selected %s", tab)
+	}
+}
+
+func TestFilesystemSeparatesCapacityAndRates(t *testing.T) {
+	tab, rng, hover := cluster.MetricFilesystem, DefaultRange, 0
+	v := View{Tab: tab, Results: []Result{
+		{Name: "Usage", Points: []cluster.PromPoint{{At: time.Unix(0, 0), Value: 1 << 30, OK: true}}},
+		{Name: "Reads", Line: true, Points: []cluster.PromPoint{{At: time.Unix(0, 0), Value: 2048, OK: true}}},
+		{Name: "Writes", Line: true, Points: []cluster.PromPoint{{At: time.Unix(0, 0), Value: 4096, OK: true}}},
+	}}
+	tt := ui.NewTester(func(c *ui.Context) {
+		Draw(c, c.Theme(), v, &tab, &rng, &hover, Icons{})
+	}, 520, 700)
+	for _, text := range []string{"Usage (bytes)", "Throughput (bytes/s)", "Usage  1Gi", "Reads  2Ki/s", "Writes  4Ki/s"} {
+		if !tt.HasText(text) {
+			t.Fatalf("missing dimension-correct display %q: %v", text, tt.Texts())
+		}
+	}
+}

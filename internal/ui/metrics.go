@@ -59,7 +59,8 @@ func MetricsChart(c *ui.Context, t *ui.Theme, series []Trace, format func(float6
 	for i := range xs {
 		xs[i] = x.At(i)
 	}
-	every := max(1, (n+7)/8)
+	// Four time labels remain legible in the narrow detail panel.
+	every := max(1, (n+3)/4)
 	var bottom []chart.Tick
 	for i := 0; i < n; i += every {
 		bottom = append(bottom, chart.Tick{At: xs[i], Label: clock(times[i].At, span)})
@@ -69,7 +70,7 @@ func MetricsChart(c *ui.Context, t *ui.Theme, series []Trace, format func(float6
 		Right:  yTicks,
 		Bottom: bottom,
 		Label: func(_ chart.Side, tick chart.Tick) {
-			ui.Text(c, tick.Label).NoWrap().TextColor(t.TextMuted).FontSize(11)
+			ui.Text(c, tick.Label).NoWrap().TextColor(t.TextMuted).FontSize(11).FontFeatures("tnum")
 		},
 	}, func(area ui.Element) {
 		area.Draw(func(p *ui.Painter, r ui.Rect) {
@@ -154,7 +155,7 @@ func primary(series []Trace, i int) (float64, bool) {
 func tooltip(c *ui.Context, t *ui.Theme, series []Trace, i int, span time.Duration, format func(float64) string) {
 	ui.Column(c).Gap(4).Padding(6, 8).Margin(4, 6, 0, 6).Radius(6).
 		Background(t.Surface).Border(1, t.Border).Children(func() {
-		ui.Text(c, clock(series[0].Points[i].At, span)).NoWrap().Bold().FontSize(12)
+		ui.Text(c, clock(series[0].Points[i].At, span)).NoWrap().Bold().FontSize(12).FontFeatures("tnum")
 		for _, s := range series {
 			if i >= len(s.Points) {
 				continue
@@ -162,7 +163,7 @@ func tooltip(c *ui.Context, t *ui.Theme, series []Trace, i int, span time.Durati
 			color, name, value := s.Color, s.Name, valueText(s.Points[i], format)
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 				ui.Box(c).Size(8, 8).Radius(2).Shrink(0).Background(color)
-				ui.Text(c, name+"  "+value).NoWrap().FontSize(12)
+				ui.Text(c, name+"  "+value).NoWrap().FontSize(12).FontFeatures("tnum")
 			})
 		}
 	})

@@ -96,6 +96,9 @@ func readPodUsages(ctx context.Context, mc metricsclient.Interface, fallback []s
 	read := false
 	for _, ns := range fallback {
 		list, nerr := mc.MetricsV1beta1().PodMetricses(ns).List(ctx, metav1.ListOptions{})
+		if MetricsAPIMissing(nerr) {
+			return nil, false, nil
+		}
 		if apierrors.IsForbidden(nerr) {
 			continue
 		}

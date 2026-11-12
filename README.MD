@@ -42,9 +42,13 @@ One tab per screen. A click opens a preview and replaces the previous one. A dou
 
 The Pods list shows these columns: Name, Namespace, Containers, CPU, Memory, Restarts, Controlled By, Node, QoS, Age, and Status. Each column but Containers sorts. CPU and memory come from metrics-server every 15 seconds while the list is shown, and read N/A when it has no sample. Status reads as kubectl's. Controlled By and Node open their Workloads or Nodes row in a pinned tab; an owner of another kind, as a custom resource, is plain text.
 
+Owner and Node links support Tab focus and Enter or Space activation, with a visible focus outline and at least a 40×40 desktop hit area. Container indicators wrap within their column rather than hiding additional containers. Loading uses the same table columns and horizontal scrolling as the inventory.
+
 ## Metrics
 
 A pod's details open on a Metrics block: CPU, memory, network, and filesystem over 1h, 6h, 24h, or 7d, about 60 bars per range. Point at a bar, or use the arrow keys, for its values.
+
+The metric tabs support arrow keys, Home, and End, and wrap below the range selector in narrow panels. Filesystem usage (bytes) and read/write throughput (bytes/s) use separate charts and axes, so capacity and rates are never compared as the same unit.
 
 Data comes from Prometheus through the API server's service proxy, so the account needs `services/proxy`. The app looks for `prometheus-operated`, `kube-prometheus-stack-prometheus`, `prometheus-kube-prometheus-prometheus`, `prometheus-server`, and `prometheus`, with the `monitoring` namespace first. **Settings → Metrics** can name another service, as `namespace/service:port`, for each context. Usage is cAdvisor with its `container` label. Request and limit lines come from kube-state-metrics, and are left out when it is not installed. The chart fetches again every minute while it is shown.
 

@@ -68,3 +68,16 @@ func TestPodUsagesFallBackPerNamespace(t *testing.T) {
 		t.Fatalf("no fallback must report the denial, got %v", err)
 	}
 }
+
+func TestPodUsagesFallbackReportsMissingAPI(t *testing.T) {
+	mc := metricsfake.NewSimpleClientset()
+	mc.PrependReactor("list", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.GetNamespace() == "" {
+			return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "", errors.New("no"))
+		}
+		return true, nil, apierrors.NewNotFound(schema.GroupResource{Group: "metrics.k8s.io", Resource: "pods"}, "")
+	})
+	if got, available, err := readPodUsages(context.Background(), mc, []string{"shop"}); err != nil || available || got != nil {
+		t.Fatalf("got %v, available %v, err %v", got, available, err)
+	}
+}
