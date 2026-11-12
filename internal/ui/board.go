@@ -141,32 +141,16 @@ func tableColumns(cols []Column) []ui.TableColumn {
 }
 
 func boardSkeleton(c *ui.Context, t *ui.Theme, cols []Column) {
-	titles := make([]string, len(cols))
-	for i, col := range cols {
-		titles[i] = col.Title
+	columns := tableColumns(cols)
+	if len(columns) == 0 {
+		columns = []ui.TableColumn{{}, {}, {}}
 	}
-	if len(titles) == 0 {
-		titles = []string{"", "", ""}
+	for i := range columns {
+		columns[i].Sortable = false
 	}
-	Status(c, "Loading").Children(func() {
-		ui.Row(c).Gap(16).Children(func() {
-			for _, title := range titles {
-				title := title
-				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-					if title != "" {
-						ui.Text(c, title).FontSize(12).TextColor(t.TextMuted).NoWrap()
-						return
-					}
-					Bar(c, t, 72, 12)
-				})
-			}
-		})
-		for range 6 {
-			ui.Row(c).Gap(16).Children(func() {
-				for range titles {
-					Bar(c, t, 72, 12)
-				}
-			})
-		}
+	Status(c, "Loading").MinHeight(0).Children(func() {
+		ui.Table(c, nil, columns, 6, func(_, _ int) {
+			Bar(c, t, 0, 12)
+		}).Grow(1).MinWidth(0).FillHeight()
 	})
 }

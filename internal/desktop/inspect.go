@@ -11,12 +11,13 @@ import (
 	"github.com/dacsang97/nakube/internal/views/events"
 	"github.com/dacsang97/nakube/internal/views/namespaces"
 	"github.com/dacsang97/nakube/internal/views/nodes"
+	"github.com/dacsang97/nakube/internal/views/pods"
 	"github.com/dacsang97/nakube/internal/views/workloads"
 )
 
 func inspectScreen(id string) bool {
 	switch id {
-	case "nodes", "namespaces", "events":
+	case "nodes", "namespaces", "events", "pods":
 		return true
 	default:
 		return false
@@ -31,6 +32,8 @@ func (a *App) drawInspect(c *ui.Context, t *ui.Theme, id string) {
 		a.drawNamespaces(c, t)
 	case "events":
 		a.drawEvents(c, t)
+	case "pods":
+		a.drawPods(c, t)
 	}
 }
 
@@ -141,6 +144,8 @@ func (a *App) prepareInspect(id string) {
 			a.listSort = ui.SortOrder{Column: events.ColAge, Descending: true}
 		case "namespaces":
 			a.listSort = ui.SortOrder{Column: namespaces.ColName}
+		case "pods":
+			a.listSort = ui.SortOrder{Column: pods.ColName}
 		case "workloads":
 			a.listSort = ui.SortOrder{Column: workloads.ColKind}
 			a.row = -1
@@ -152,6 +157,15 @@ func (a *App) prepareInspect(id string) {
 
 func (a *App) bindList(keys []string) {
 	a.row = kit.Place(a.row, a.listKey, keys)
+	// A row chosen from a link elsewhere is scrolled to and its panel shown,
+	// once.
+	if a.listReveal && len(keys) > 0 {
+		a.listReveal = false
+		if a.row >= 0 {
+			a.listState.ScrollTo(a.row, ui.Center)
+			a.detailPanelOpen = true
+		}
+	}
 	a.listState.Selected = &a.row
 	a.listState.Sort = &a.listSort
 	a.listState.Columns = cloneLayout(a.listColumns)

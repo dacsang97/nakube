@@ -14,7 +14,7 @@ func TestContextColorMapsNamesToPalette(t *testing.T) {
 		t.Fatalf("prod left palette slot 4")
 	}
 	// Spread: 64 generated names must use at least 5 distinct palette
-	// colors, so the list reads as Lens's colored cluster list.
+	// colors, so the list uses distinct palette entries.
 	seen := map[ui.Color]bool{}
 	names := []string{"", "dev", "prod", "arn:aws:eks:ap-southeast-1:645419842593:cluster/ght-hz"}
 	for i := 0; i < 64; i++ {

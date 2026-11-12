@@ -143,6 +143,9 @@ func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSna
 			onEdit:   onEdit,
 			onRemove: onRemove,
 			draw: func(c *ui.Context, t *ui.Theme) {
+				if row.Identity.Kind == "Pod" {
+					a.drawPodMetrics(c, t, row.Namespace, row.Name)
+				}
 				resource.Detail(c, t, list, selection.Index)
 			},
 		})
@@ -627,7 +630,7 @@ func (a *App) selectionForFilter(filter string) string {
 	return filter
 }
 
-// drawNamespaceSelector renders the Lens-style namespace dropdown beside
+// drawNamespaceSelector renders the namespace dropdown beside
 // list titles. Namespaces come from the informer cache, sorted by name.
 func (a *App) drawNamespaceSelector(c *ui.Context, _ *ui.Theme) {
 	opts := a.namespaceSelectOptions()
@@ -798,6 +801,9 @@ func (a *App) drawWorkloads(c *ui.Context, t *ui.Theme) {
 		onEdit:   onEdit,
 		onRemove: onRemove,
 		draw: func(c *ui.Context, t *ui.Theme) {
+			if item.Kind == "Pod" {
+				a.drawPodMetrics(c, t, item.Namespace, item.Name)
+			}
 			workloads.Detail(c, t, item, time.Now())
 		},
 	})
