@@ -26,6 +26,8 @@ Tests need no cluster and no display. A missing kubeconfig is not a failure.
 
 One tab per screen. A click opens a preview and replaces the previous one. A double click pins it. A drag reorders the strip. Logs, a shell, and YAML open beside the list. The context rail switches clusters without leaving the current screen; expand it to show context names, with provider details added when short names collide. Namespace-scoped list tabs keep their own namespace filter; their Command/Ctrl-P palette can switch to one namespace or back to All namespaces. Workloads combines live health summaries, readiness charts, per-kind status rails, search, filters, and a sortable inventory. Nodes, Namespaces, Events, generic Kubernetes resources, and Argo resource lists open selected-row details and actions in the shared right shell panel. Closing the last tab returns to Overview.
 
+Exec terminals recognize a coding-agent identity only when the program sets an exact known terminal title (for example `Claude Code`, `Codex`, `Gemini CLI`, or `OpenCode`). The core exposes `agent.Identity{ID, Name}` to the terminal panel and sidebar; an unmatched later title immediately clears the identity rather than leaving a stale badge.
+
 | | macOS | Elsewhere |
 |---|---|---|
 | Toggle context rail | Command-Shift-E | Ctrl-Shift-E |
@@ -65,11 +67,11 @@ make lint
 
 ## Phone
 
-Open **Settings → Na Kube Mobile** on the desktop. A phone that has never connected opens directly into the QR scanner; scan the desktop code to connect. Both devices must be signed in to the same Tailscale tailnet and MagicDNS must be enabled. The QR transfers only the desktop MagicDNS name and fixed port; the phone calls `http://<name>:47623` on the tailnet. Cleartext HTTP is allowed only for `ts.net`.
+Open **Settings → Na Kube Mobile** on the desktop. A phone that has never connected opens directly into the QR scanner. The code contains the desktop's private LAN and, when available, Tailscale endpoints plus a random pairing credential. The phone tries the encoded endpoints in order, so the same pairing works on the local network and away from it through Tailscale. Do not share the QR code.
 
 After a successful connection, the phone opens the context catalog on subsequent launches. Choose a context to view its cluster overview: node readiness, pods, warnings, CPU, and memory, with the same summaries as desktop. Pull to refresh. Reading a context on the phone does not switch the desktop context or overwrite its persisted selection. Missing metrics-server is shown as unavailable, not zero. The mobile interface currently exposes overview only; existing desktop pod and Argo APIs are unchanged.
 
-The phone catalog uses `GET /v1/contexts` (credential-free name, cluster, and current fields); overview uses `GET /v1/overview?context=<name>`. Requests without a context retain the desktop-session overview behavior.
+The phone catalog uses `GET /v1/contexts` (credential-free name, cluster, and current fields); overview uses `GET /v1/overview?context=<name>`. Every route requires the QR bearer credential and the server accepts only private-LAN, loopback, or Tailscale source addresses. Requests without a context retain the desktop-session overview behavior. Desktop credentials persist in a private `0600` file; iOS stores the pairing in Keychain. Clients saved by older address-only releases return to pairing with an explicit migration message instead of repeatedly sending unauthenticated requests.
 
 The overview's numeric `charts` payload drives native CPU/memory utilization bars and node/pod health charts. Usage is compared with allocatable capacity; percentages above 100% remain visible. An absent or partial node-metrics response is unavailable, not zero. Loading shows layout-matched skeletons that respect Reduce Motion; no synthetic history is plotted.
 
@@ -80,8 +82,8 @@ To run the iOS app on an iPhone, open `ios/NakubeRemote/NakubeRemote.xcodeproj`,
 The iOS app uses a responsibility-based layout under `ios/NakubeRemote/NakubeRemote`:
 
 - `ContentView.swift` composes onboarding or contexts home; it does not own networking or persistence.
-- `Core/AppConnectionStore.swift` owns the verified desktop connection, legacy-address migration, and navigation reset identity. `Core/DesktopAddress.swift` validates QR/manual MagicDNS addresses.
-- `Models/` contains API response values. `Services/` owns HTTP requests, decoding, context-identity validation, and connection error messages. `DesktopAPI` accepts a `URLSession` for isolated verification.
+- `Core/AppConnectionStore.swift` owns the verified desktop connection, address-only migration, and navigation reset identity. `Core/DesktopAddress.swift` validates versioned QR payloads and their LAN/Tailscale endpoint list; `Core/PairingCredentialStore.swift` persists the bearer credential in Keychain.
+- `Models/` contains API response values. `Services/` owns authenticated HTTP requests, endpoint failover, decoding, context-identity validation, and connection error messages. `DesktopAPI` accepts a `URLSession` for isolated verification.
 - `Views/Connection/`, `Views/Contexts/`, and `Views/Overview/` own feature UI and view-scoped tasks. Shared UI lives in `Views/Components/`; capture lifecycle and the serial camera queue are isolated in `Views/Connection/Scanner/`.
 
 Xcode 16+ automatically includes Swift files through a filesystem-synchronized app group. Add files inside the app source directory without hand-editing build-file entries. `Info.plist` is explicitly excluded from automatic resource membership.

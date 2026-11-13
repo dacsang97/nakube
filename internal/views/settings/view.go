@@ -1,8 +1,12 @@
 package settings
 
 import (
+	"fmt"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+
+	"github.com/dacsang97/nakube/internal/remote"
 )
 
 // CatalogItem is the public, credential-free part of one kubeconfig context.
@@ -159,23 +163,30 @@ func DrawTheme(c *ui.Context, t *ui.Theme, index *int, current mygo.ThemeSource)
 	})
 }
 
-// DrawMobile shows the Tailscale endpoint that NaKube Mobile can scan.
-func DrawMobile(c *ui.Context, t *ui.Theme, qr *ui.Bitmap, address, errText string) {
-	page(c, t, "Na Kube Mobile", "Connect a phone on the same Tailscale network.", func() {
+// DrawMobile shows authenticated private-network endpoints the mobile app can scan.
+func DrawMobile(c *ui.Context, t *ui.Theme, qr *ui.Bitmap, address string, endpoints []remote.Endpoint, errText string) {
+	page(c, t, "Na Kube Mobile", "Connect a phone over your LAN or Tailscale.", func() {
 		card(c, t, func() {
 			ui.Row(c).AlignItems(ui.Start).Gap(24).Children(func() {
 				ui.Column(c).Grow(1).MinWidth(0).Gap(10).Children(func() {
 					ui.Text(c, "Pair this computer").FontSize(16).Bold()
-					ui.Text(c, "Open Na Kube Mobile, tap Scan QR Code, and scan the code shown here. Both devices must be signed in to the same tailnet.").TextColor(t.TextMuted).Wrap()
+					ui.Text(c, "Open Na Kube Mobile and scan this code. The code includes a private pairing credential; do not share it.").TextColor(t.TextMuted).Wrap()
 					if errText != "" {
 						ui.Text(c, errText).TextColor(t.Danger).Wrap()
 						return
 					}
 					if address == "" {
-						ui.Text(c, "Checking Tailscale…").TextColor(t.TextMuted)
+						ui.Text(c, "Checking private network addresses…").TextColor(t.TextMuted)
 						return
 					}
-					ui.Text(c, address).FontSize(13).SingleLine().Tooltip(address)
+					for _, endpoint := range endpoints {
+						label := "LAN"
+						if endpoint.Network == "tailscale" {
+							label = "Tailscale"
+						}
+						value := endpointAddress(endpoint)
+						ui.Text(c, label+"  "+value).FontSize(13).SingleLine().Tooltip(value)
+					}
 					if ui.Button(c, "Copy address").Clicked() {
 						c.WriteClipboard(address)
 					}
@@ -191,6 +202,10 @@ func DrawMobile(c *ui.Context, t *ui.Theme, qr *ui.Bitmap, address, errText stri
 			})
 		})
 	})
+}
+
+func endpointAddress(endpoint remote.Endpoint) string {
+	return fmt.Sprintf("http://%s:%d", endpoint.Host, endpoint.Port)
 }
 
 func page(c *ui.Context, t *ui.Theme, title, subtitle string, body func()) {

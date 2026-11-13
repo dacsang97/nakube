@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct ContextsHomeView: View {
-    let host: String
-    let onConnect: (String, [ClusterContext]) -> Void
+    let connection: DesktopConnection
+    let onConnect: (DesktopConnection, [ClusterContext]) -> Void
     @State private var contexts: [ClusterContext]?
     @State private var errorText: String?
     @State private var loading = false
@@ -10,8 +10,8 @@ struct ContextsHomeView: View {
     @State private var refreshID = UUID()
     @State private var showingConnection = false
 
-    init(host: String, initialContexts: [ClusterContext]?, onConnect: @escaping (String, [ClusterContext]) -> Void) {
-        self.host = host
+    init(connection: DesktopConnection, initialContexts: [ClusterContext]?, onConnect: @escaping (DesktopConnection, [ClusterContext]) -> Void) {
+        self.connection = connection
         self.onConnect = onConnect
         _contexts = State(initialValue: initialContexts)
     }
@@ -22,7 +22,7 @@ struct ContextsHomeView: View {
                 Section {
                     Label {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(host).textSelection(.enabled)
+                            Text(connection.displayHost).textSelection(.enabled)
                             Text("Connected desktop").font(.caption).foregroundStyle(.secondary)
                         }
                     } icon: {
@@ -80,7 +80,7 @@ struct ContextsHomeView: View {
             }
             .navigationTitle("Contexts")
             .navigationDestination(for: ClusterContext.self) { context in
-                ClusterOverviewView(host: host, context: context)
+                ClusterOverviewView(connection: connection, context: context)
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -95,9 +95,9 @@ struct ContextsHomeView: View {
             .onDisappear { requestID = UUID() }
             .sheet(isPresented: $showingConnection) {
                 NavigationStack {
-                    ConnectionView(onConnect: { newHost, contexts in
+                    ConnectionView(onConnect: { newConnection, contexts in
                         showingConnection = false
-                        onConnect(newHost, contexts)
+                        onConnect(newConnection, contexts)
                     })
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
@@ -117,7 +117,7 @@ struct ContextsHomeView: View {
         errorText = nil
         defer { if requestID == id { loading = false } }
         do {
-            let result = try await DesktopAPI(host: host).contexts()
+            let result = try await DesktopAPI(connection: connection).contexts()
             try Task.checkCancellation()
             guard requestID == id else { return }
             contexts = result

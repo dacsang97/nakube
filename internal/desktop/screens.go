@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 
+	"github.com/dacsang97/nakube/internal/agent"
 	"github.com/dacsang97/nakube/internal/cluster"
 	"github.com/dacsang97/nakube/internal/views/helm"
 	"github.com/dacsang97/nakube/internal/views/logs"
@@ -99,12 +100,37 @@ func (a *App) openLogs(namespace, name, container string) {
 	}()
 }
 
+type execTarget struct {
+	namespace string
+	name      string
+	container string
+}
+
 func (a *App) drawExec(c *ui.Context, t *ui.Theme) {
-	term.Draw(c, t, term.Page{Err: a.execErr, Term: a.execTerm, OnBack: a.backFromExec})
+	term.Draw(c, t, term.Page{
+		Err:        a.execErr,
+		Term:       a.execTerm,
+		Restarting: a.execRestarting,
+		Agent:      a.execAgent,
+		OnBack:     a.backFromExec,
+		OnRestart:  a.restartExec,
+	})
+}
+
+func (a *App) restartExec() {
+	target := a.execTarget
+	if target.name == "" {
+		return
+	}
+	a.startExec(target, true)
 }
 
 func (a *App) openExec(namespace, name, container string) {
 	a.openDetail("exec", "Pod", namespace, name, "Shell: "+name)
+	a.startExec(execTarget{namespace: namespace, name: name, container: container}, false)
+}
+
+func (a *App) startExec(target execTarget, restarting bool) {
 	a.closeExec()
 	a.ensureTabs()
 	owner := a.active
@@ -116,26 +142,41 @@ func (a *App) openExec(namespace, name, container string) {
 	}
 	b.mode = "exec"
 	b.execErr = ""
+	b.execTarget = target
+	b.execRestarting = restarting
+	b.execAgent = agent.Identity{}
+	b.execGen++
+	gen := b.execGen
+	execCtx, cancel := context.WithCancel(context.Background())
+	b.execCancel = cancel
 	if a.active == owner {
 		a.mode = "exec"
 		a.execErr = ""
+		a.execTarget = target
+		a.execRestarting = restarting
+		a.execAgent = agent.Identity{}
+		a.execGen = gen
+		a.execCancel = cancel
 	}
 	a.mu.Unlock()
+	a.invalidate()
 	go func() {
-		conn, err := a.session.Exec(context.Background(), namespace, name, container, []string{"/bin/sh"})
+		conn, err := a.session.Exec(execCtx, target.namespace, target.name, target.container, []string{"/bin/sh"})
 		if err != nil {
-			a.noteExecErr(owner, publicError(err))
+			a.noteExecErr(owner, gen, publicError(err))
 			return
 		}
-		term, err := terminal.New(terminal.Options{Conn: conn})
+		term, err := terminal.New(terminal.Options{Conn: conn, OnTitle: func(title string) {
+			a.noteExecTitle(owner, gen, title)
+		}})
 		if err != nil {
 			_ = conn.Close()
-			a.noteExecErr(owner, publicError(err))
+			a.noteExecErr(owner, gen, publicError(err))
 			return
 		}
 		a.mu.Lock()
 		b := a.bodies[owner]
-		if b == nil || b.mode != "exec" {
+		if b == nil || b.mode != "exec" || b.execGen != gen {
 			a.mu.Unlock()
 			term.Close()
 			_ = conn.Close()
@@ -143,40 +184,66 @@ func (a *App) openExec(namespace, name, container string) {
 		}
 		b.execConn = conn
 		b.execTerm = term
-		if a.active == owner {
+		b.execRestarting = false
+		if a.active == owner && a.mode == "exec" && a.execGen == gen {
 			a.execConn = conn
 			a.execTerm = term
+			a.execRestarting = false
 		}
 		a.mu.Unlock()
 		a.invalidate()
 	}()
 }
 
-func (a *App) noteExecErr(owner, msg string) {
+func (a *App) noteExecTitle(owner string, gen uint64, title string) {
+	identity := agent.DetectTitle(title)
 	a.mu.Lock()
-	if b := a.bodies[owner]; b != nil {
-		b.execErr = msg
+	if b := a.bodies[owner]; b != nil && b.mode == "exec" && b.execGen == gen {
+		b.execAgent = identity
 	}
-	if a.active == owner {
+	if a.active == owner && a.mode == "exec" && a.execGen == gen {
+		a.execAgent = identity
+	}
+	a.mu.Unlock()
+	a.invalidate()
+}
+
+func (a *App) noteExecErr(owner string, gen uint64, msg string) {
+	a.mu.Lock()
+	if b := a.bodies[owner]; b != nil && b.mode == "exec" && b.execGen == gen {
+		b.execErr = msg
+		b.execRestarting = false
+		b.execCancel = nil
+	}
+	if a.active == owner && a.mode == "exec" && a.execGen == gen {
 		a.execErr = msg
+		a.execRestarting = false
+		a.execCancel = nil
 	}
 	a.mu.Unlock()
 	a.invalidate()
 }
 
 func (a *App) closeExec() {
-	if a.execConn != nil {
-		_ = a.execConn.Close()
-		a.execConn = nil
-	}
-	if a.execTerm != nil {
-		a.execTerm.Close()
-		a.execTerm = nil
-	}
+	a.mu.Lock()
+	cancel, conn, term := a.execCancel, a.execConn, a.execTerm
+	a.execCancel = nil
+	a.execConn = nil
+	a.execTerm = nil
 	if a.mode == "exec" {
 		a.mode = ""
 	}
-	a.stash()
+	a.stashLocked()
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if term != nil {
+		_ = term.Close()
+	}
 }
 
 func (a *App) drawYAML(c *ui.Context, t *ui.Theme) {

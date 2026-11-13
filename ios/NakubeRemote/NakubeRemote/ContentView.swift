@@ -5,9 +5,9 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if !connection.host.isEmpty {
+            if let desktop = connection.connection {
                 ContextsHomeView(
-                    host: connection.host,
+                    connection: desktop,
                     initialContexts: connection.initialContexts,
                     onConnect: connection.saveConnection
                 )

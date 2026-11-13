@@ -6,8 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,7 +26,7 @@ import (
 	"github.com/dacsang97/nakube/internal/views/overview"
 )
 
-// Phone adapts the desktop session for the Tailscale listener.
+// Phone adapts the desktop session for authenticated private-network access.
 type Phone struct {
 	App *App
 }
@@ -144,38 +148,40 @@ func ownedPod(pod *corev1.Pod) bool {
 	return false
 }
 
-// StartPhoneListener binds the Tailscale address and publishes a scannable
-// endpoint to Settings. A missing CLI or a down tailnet leaves the desktop
-// running and makes the setup problem visible there.
+// StartPhoneListener publishes authenticated LAN and Tailscale endpoints.
+// Either network is sufficient; unavailable Tailscale does not disable LAN.
 func (a *App) StartPhoneListener(ctx context.Context) {
-	ip, err := tailscaleIPv4(ctx)
-	if err != nil {
-		a.setMobileConnection("", nil, errors.New("tailscale is unavailable; sign in to Tailscale and restart NaKube"))
+	endpoints := localLANEndpoints()
+	if host, err := tailscaleDNSName(ctx); err == nil {
+		endpoints = append(endpoints, remote.Endpoint{Network: "tailscale", Host: host, Port: remote.Port})
+	}
+	if len(endpoints) == 0 {
+		a.setMobileConnection(nil, "", nil, errors.New("no private LAN or Tailscale address is available"))
 		return
 	}
-	dnsName, err := tailscaleDNSName(ctx)
+	token, err := mobilePairingToken()
 	if err != nil {
-		a.setMobileConnection("", nil, errors.New("tailscale MagicDNS is unavailable; enable MagicDNS and restart NaKube"))
+		a.setMobileConnection(nil, "", nil, errors.New("could not load the mobile pairing credential"))
 		return
 	}
-	qr, err := mobilePairingBitmap(dnsName)
+	qr, err := mobilePairingBitmap(endpoints, token)
 	if err != nil {
-		a.setMobileConnection("", nil, errors.New("could not create the mobile pairing code"))
+		a.setMobileConnection(nil, "", nil, errors.New("could not create the mobile pairing code"))
 		return
 	}
-	_, err = remote.ListenTailscale(ctx, func(context.Context) (string, error) {
-		return ip, nil
-	}, remote.Handler(Phone{App: a}))
-	if err != nil {
-		a.setMobileConnection("", nil, errors.New("could not listen on the Tailscale address"))
+	handler := remote.Handler(token, Phone{App: a})
+	if _, err = remote.Listen(ctx, handler); err != nil {
+		a.setMobileConnection(nil, "", nil, errors.New("could not listen for mobile connections"))
 		return
 	}
-	a.setMobileConnection(fmt.Sprintf("http://%s:%d", dnsName, remote.Port), qr, nil)
+	primary := endpointAddress(endpoints[0])
+	a.setMobileConnection(endpoints, primary, qr, nil)
 }
 
-func (a *App) setMobileConnection(address string, qr *ui.Bitmap, err error) {
+func (a *App) setMobileConnection(endpoints []remote.Endpoint, address string, qr *ui.Bitmap, err error) {
 	a.mu.Lock()
 	a.mobileAddress = address
+	a.mobileEndpoints = append([]remote.Endpoint(nil), endpoints...)
 	a.mobileQR = qr
 	a.mobileErr = ""
 	if err != nil {
@@ -185,21 +191,101 @@ func (a *App) setMobileConnection(address string, qr *ui.Bitmap, err error) {
 	a.invalidate()
 }
 
-func mobilePairingURL(host string) string {
+func endpointAddress(endpoint remote.Endpoint) string {
+	return "http://" + net.JoinHostPort(endpoint.Host, fmt.Sprint(endpoint.Port))
+}
+
+func mobilePairingURL(endpoints []remote.Endpoint, token string) string {
 	query := url.Values{}
-	query.Set("host", strings.TrimSpace(host))
+	query.Set("v", "2")
 	query.Set("port", fmt.Sprint(remote.Port))
+	query.Set("token", token)
+	for _, endpoint := range endpoints {
+		query.Add(endpoint.Network, strings.TrimSpace(endpoint.Host))
+	}
 	return "nakube://connect?" + query.Encode()
 }
 
-func mobilePairingBitmap(host string) (*ui.Bitmap, error) {
-	code, err := qrcode.New(mobilePairingURL(host), qrcode.Medium)
+func mobilePairingBitmap(endpoints []remote.Endpoint, token string) (*ui.Bitmap, error) {
+	code, err := qrcode.New(mobilePairingURL(endpoints, token), qrcode.Medium)
 	if err != nil {
 		return nil, err
 	}
 	bitmap := ui.NewBitmap(code.Image(352))
 	bitmap.Pixelated()
 	return bitmap, nil
+}
+
+func localLANEndpoints() []remote.Endpoint {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var endpoints []remote.Endpoint
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, address := range addrs {
+			ip, _, err := net.ParseCIDR(address.String())
+			if err != nil || ip.To4() == nil || !ip.IsPrivate() || seen[ip.String()] {
+				continue
+			}
+			seen[ip.String()] = true
+			endpoints = append(endpoints, remote.Endpoint{Network: "lan", Host: ip.String(), Port: remote.Port})
+		}
+	}
+	sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].Host < endpoints[j].Host })
+	return endpoints
+}
+
+func mobilePairingToken() (string, error) {
+	state, err := cluster.StatePath()
+	if err != nil {
+		return "", err
+	}
+	return loadOrCreatePairingToken(filepath.Join(filepath.Dir(state), "mobile-pairing-token"))
+}
+
+func loadOrCreatePairingToken(path string) (string, error) {
+	body, err := os.ReadFile(path)
+	if err == nil {
+		token := strings.TrimSpace(string(body))
+		if len(token) < 32 {
+			return "", errors.New("stored mobile pairing token is invalid")
+		}
+		return token, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	token, err := remote.NewPairingToken()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return loadOrCreatePairingToken(path)
+	}
+	if err != nil {
+		return "", err
+	}
+	if _, err = file.WriteString(token + "\n"); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func tailscaleDNSName(ctx context.Context) (string, error) {
@@ -220,12 +306,4 @@ func tailscaleDNSName(ctx context.Context) (string, error) {
 		return "", errors.New("tailscale status has no MagicDNS name")
 	}
 	return name, nil
-}
-
-func tailscaleIPv4(ctx context.Context) (string, error) {
-	out, err := exec.CommandContext(ctx, "tailscale", "ip", "-4").Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
 }

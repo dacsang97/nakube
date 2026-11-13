@@ -72,22 +72,27 @@ func (a *App) drawDetailPanel(c *ui.Context, t *ui.Theme) {
 	}
 	panel := a.detailPanel
 	rightPanel(c, t, panel.label).Children(func() {
-		ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 8, 0, 12).Gap(4).AlignItems(ui.Center).Background(tabInactive(t)).Label("Detail panel header").Children(func() {
+		header := ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 8, 0, 12).Gap(4).AlignItems(ui.Center).
+			Background(editorCard(t)).Focusable().Label("Detail panel header")
+		showActions := header.Hovered() || header.FocusWithin()
+		header.Children(func() {
 			ui.Row(c).Grow(1).MinWidth(0).Gap(4).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, panel.title).FontSize(13).FontWeight(650).SingleLine().Shrink(1).MinWidth(0)
-				copyKey := panel.label + "\x00" + panel.title + "\x00" + panel.copyText
-				copyLabel, copyIcon := "Copy name", "copy"
-				if a.detailCopiedKey == copyKey && c.Now().Before(a.detailCopiedUntil) {
-					copyLabel, copyIcon = "Copied", "check"
-				}
-				copyButton := panelHeaderButton(c, t, copyLabel, copyIcon, false)
-				if copyButton.Clicked() {
-					c.WriteClipboard(panel.copyText)
-					a.detailCopiedKey = copyKey
-					a.detailCopiedUntil = c.Now().Add(2 * time.Second)
-					c.After(2 * time.Second)
-				}
 			})
+			if !showActions {
+				return
+			}
+			copyKey := panel.label + "\x00" + panel.title + "\x00" + panel.copyText
+			copyLabel, copyIcon := "Copy name", "copy"
+			if a.detailCopiedKey == copyKey && c.Now().Before(a.detailCopiedUntil) {
+				copyLabel, copyIcon = "Copied", "check"
+			}
+			if copyButton := panelHeaderButton(c, t, copyLabel, copyIcon, false); copyButton.Clicked() {
+				c.WriteClipboard(panel.copyText)
+				a.detailCopiedKey = copyKey
+				a.detailCopiedUntil = c.Now().Add(2 * time.Second)
+				c.After(2 * time.Second)
+			}
 			if panel.onEdit != nil && panelHeaderButton(c, t, "Edit", "pencil", false).Clicked() {
 				panel.onEdit()
 			}
@@ -101,7 +106,7 @@ func (a *App) drawDetailPanel(c *ui.Context, t *ui.Theme) {
 				a.detailPanelOpen = false
 			}
 		})
-		ui.Scroll(c).Grow(1).FillHeight().Children(func() {
+		ui.Scroll(c).Grow(1).FillHeight().Background(editorCard(t)).Children(func() {
 			ui.Column(c).Padding(16).Gap(16).Children(func() {
 				panel.draw(c, t)
 			})
@@ -163,6 +168,9 @@ func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme, current string, contex
 			})
 		})
 		ui.Column(c).Shrink(0).Padding(4, 0).Gap(4).Children(func() {
+			if a.mode == "exec" && a.execAgent.ID != "" {
+				a.drawAgentRail(c, t, a.execAgent.Name, wide)
+			}
 			a.activityButton(c, t, "settings", "Settings", "Settings", page == "settings", wide, func() {
 				a.togglePage("/settings")
 			})
@@ -171,6 +179,27 @@ func (a *App) drawActivityBar(c *ui.Context, t *ui.Theme, current string, contex
 				icon, tip = "panel-left-close", "Collapse contexts"
 			}
 			a.activityButton(c, t, icon, tip+" ("+railShortcutHint()+")", tip, false, wide, a.toggleRail)
+		})
+	})
+}
+
+func (a *App) drawAgentRail(c *ui.Context, t *ui.Theme, name string, expanded bool) {
+	railSlot(c, expanded).Children(func() {
+		row := ui.Row(c).Height(activitySlot).AlignSelf(ui.Stretch).AlignItems(ui.Center).
+			Radius(6).Background(t.SurfaceHover).Label("Active coding agent: " + name).Tooltip("Active coding agent: " + name)
+		if expanded {
+			row.Padding(0, 6).Gap(10)
+		} else {
+			row.Justify(ui.Center)
+		}
+		row.Children(func() {
+			ui.Icon(c, IconNamed("terminal")).Size(20, 20).TextColor(t.Success)
+			if expanded {
+				ui.Text(c, name).FontSize(13).FontWeight(600).SingleLine().Grow(1).MinWidth(0)
+			} else {
+				ui.Box(c).Absolute().Top(3).Right(3).Size(7, 7).Radius(3.5).
+					Background(t.Success).Border(1.5, t.SurfaceHover)
+			}
 		})
 	})
 }

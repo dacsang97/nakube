@@ -17,7 +17,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/dacsang97/nakube/internal/agent"
 	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/remote"
 	"github.com/dacsang97/nakube/internal/views/overview"
 )
 
@@ -86,21 +88,26 @@ type App struct {
 
 	confirm *Confirm
 
-	mode         string
-	row          int
-	logLines     []LogLine
-	logFilter    string
-	logFollow    bool
-	logPod       string
-	logGen       int
-	logLoading   bool
-	logCancel    context.CancelFunc
-	execTerm     *terminal.Terminal
-	execConn     io.Closer
-	execErr      string
-	yaml         *yamlScreen
-	forwards     []*cluster.Forward
-	secretReveal bool
+	mode           string
+	row            int
+	logLines       []LogLine
+	logFilter      string
+	logFollow      bool
+	logPod         string
+	logGen         int
+	logLoading     bool
+	logCancel      context.CancelFunc
+	execTerm       *terminal.Terminal
+	execConn       io.Closer
+	execErr        string
+	execTarget     execTarget
+	execRestarting bool
+	execAgent      agent.Identity
+	execGen        uint64
+	execCancel     context.CancelFunc
+	yaml           *yamlScreen
+	forwards       []*cluster.Forward
+	secretReveal   bool
 
 	scaleTo       string
 	forwardLocal  string
@@ -165,9 +172,10 @@ type App struct {
 	catalogPasteOpen  bool
 	catalogPaste      string
 
-	mobileAddress string
-	mobileErr     string
-	mobileQR      *ui.Bitmap
+	mobileAddress   string
+	mobileEndpoints []remote.Endpoint
+	mobileErr       string
+	mobileQR        *ui.Bitmap
 
 	sidebarWidth float32
 	sideDrag     float32

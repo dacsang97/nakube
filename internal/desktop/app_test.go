@@ -16,7 +16,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/dacsang97/nakube/internal/agent"
 	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/remote"
 	"github.com/dacsang97/nakube/internal/views/argo"
 	"github.com/dacsang97/nakube/internal/views/overview"
 )
@@ -180,6 +182,7 @@ func TestWorkloadDetailsUseSeparateShellPanel(t *testing.T) {
 	if !tt.HasText("Deployment: web") {
 		t.Fatal("selected workload details are missing")
 	}
+	focusDetailPanel(t, tt)
 	for _, want := range []string{"Copy name", "Edit", "Remove", "Close details"} {
 		if _, ok := tt.Find(want); !ok {
 			t.Fatalf("workload detail header missing %q", want)
@@ -260,6 +263,7 @@ func TestInspectScreensUseSharedShellPanel(t *testing.T) {
 			if !tt.HasText(test.detail) {
 				t.Fatalf("missing detail %q in %v", test.detail, tt.Texts())
 			}
+			focusDetailPanel(t, tt)
 			for _, want := range []string{"Copy name", "Edit", "Remove", "Close details"} {
 				if _, ok := tt.Find(want); !ok {
 					t.Fatalf("%s header missing %q", test.name, want)
@@ -304,6 +308,7 @@ func TestGenericResourcesUseSharedShellPanel(t *testing.T) {
 			t.Fatalf("generic detail missing %q in %v", want, tt.Texts())
 		}
 	}
+	focusDetailPanel(t, tt)
 	for _, want := range []string{"Copy name", "Edit", "Remove", "Close details"} {
 		if _, ok := tt.Find(want); !ok {
 			t.Fatalf("generic detail header missing %q", want)
@@ -388,6 +393,7 @@ func TestArgoResourcesUseSharedShellPanel(t *testing.T) {
 			t.Fatalf("Argo detail missing %q in %v", want, tt.Texts())
 		}
 	}
+	focusDetailPanel(t, tt)
 	for _, want := range []string{"Copy name", "Edit", "Remove", "Close details"} {
 		if _, ok := tt.Find(want); !ok {
 			t.Fatalf("Argo detail header missing %q", want)
@@ -410,6 +416,48 @@ func TestArgoResourcesUseSharedShellPanel(t *testing.T) {
 	}
 	if action != "delete" {
 		t.Fatalf("remove dispatched %q", action)
+	}
+}
+
+func TestKnownExecAgentAppearsInPanelAndRail(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.mode = "exec"
+	a.execAgent = agent.Identity{ID: "claude", Name: "Claude Code"}
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Row(c).Fill().Children(func() {
+			a.drawActivityBar(c, c.Theme(), "", nil, nil)
+			ui.Column(c).Grow(1).Children(func() {
+				a.drawExec(c, c.Theme())
+			})
+		})
+	}, 900, 600)
+	if _, ok := tt.Find("Active coding agent: Claude Code"); !ok {
+		t.Fatalf("known agent is missing from the rail: %v", tt.Texts())
+	}
+	if !tt.HasText("Claude Code") {
+		t.Fatalf("known agent is missing from the exec panel: %v", tt.Texts())
+	}
+
+	a.execAgent = agent.Identity{}
+	tt.Frame()
+	if _, ok := tt.Find("Active coding agent: Claude Code"); ok || tt.HasText("Claude Code") {
+		t.Fatal("unknown agent left stale identity presentation")
+	}
+}
+
+func focusDetailPanel(t *testing.T, tt *ui.Tester) {
+	t.Helper()
+	if _, ok := tt.Find("Copy name"); ok {
+		t.Fatal("inactive detail panel exposed its actions")
+	}
+	if tt.HasText("Panel actions") {
+		t.Fatal("inactive detail panel showed action placeholder copy")
+	}
+	if err := tt.Click("Detail panel header"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tt.Find("Copy name"); !ok {
+		t.Fatal("focused detail panel did not reveal its actions")
 	}
 }
 
@@ -867,8 +915,13 @@ func TestSettingsPage(t *testing.T) {
 	if got := exactCount("Theme"); got < 2 {
 		t.Fatalf("theme tab title was not updated, count %d in %q", got, tt.Texts())
 	}
-	a.mobileAddress = "http://desktop.tailnet.ts.net:47623"
-	qr, err := mobilePairingBitmap("desktop.tailnet.ts.net")
+	endpoints := []remote.Endpoint{
+		{Network: "lan", Host: "192.168.1.8", Port: remote.Port},
+		{Network: "tailscale", Host: "desktop.tailnet.ts.net", Port: remote.Port},
+	}
+	a.mobileAddress = endpointAddress(endpoints[0])
+	a.mobileEndpoints = endpoints
+	qr, err := mobilePairingBitmap(endpoints, "secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -879,7 +932,7 @@ func TestSettingsPage(t *testing.T) {
 	if got := a.router.Path(); got != "/settings" {
 		t.Fatalf("mobile section changed router path to %q", got)
 	}
-	for _, want := range []string{"Pair this computer", "Connect a phone on the same Tailscale network.", "Scan with Na Kube Mobile", a.mobileAddress} {
+	for _, want := range []string{"Pair this computer", "Connect a phone over your LAN or Tailscale.", "Scan with Na Kube Mobile", "LAN  " + endpointAddress(endpoints[0]), "Tailscale  " + endpointAddress(endpoints[1])} {
 		if !tt.HasText(want) {
 			t.Fatalf("mobile settings missing %q, texts %q", want, tt.Texts())
 		}
@@ -893,7 +946,8 @@ func TestSettingsPage(t *testing.T) {
 	if got := tt.Clipboard(); got != a.mobileAddress {
 		t.Fatalf("copied address %q", got)
 	}
-	if got := mobilePairingURL("desktop.tailnet.ts.net"); got != "nakube://connect?host=desktop.tailnet.ts.net&port=47623" {
+	wantPairingURL := "nakube://connect?lan=192.168.1.8&port=47623&tailscale=desktop.tailnet.ts.net&token=secret&v=2"
+	if got := mobilePairingURL(endpoints, "secret"); got != wantPairingURL {
 		t.Fatalf("pairing URL %q", got)
 	}
 	if _, ok := parseAppearance("nope"); ok {

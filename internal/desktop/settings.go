@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/remote"
 	"github.com/dacsang97/nakube/internal/views/settings"
 )
 
@@ -89,9 +90,9 @@ func (a *App) drawSettings(c *ui.Context, t *ui.Theme) {
 		a.drawMetricsSettings(c, t)
 	case "mobile":
 		a.mu.Lock()
-		address, errText, qr := a.mobileAddress, a.mobileErr, a.mobileQR
+		address, endpoints, errText, qr := a.mobileAddress, append([]remote.Endpoint(nil), a.mobileEndpoints...), a.mobileErr, a.mobileQR
 		a.mu.Unlock()
-		settings.DrawMobile(c, t, qr, address, errText)
+		settings.DrawMobile(c, t, qr, address, endpoints, errText)
 	default:
 		a.ensureCatalog()
 		a.mu.Lock()

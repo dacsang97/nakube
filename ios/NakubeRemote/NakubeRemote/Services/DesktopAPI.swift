@@ -1,11 +1,11 @@
 import Foundation
 
 struct DesktopAPI: Sendable {
-    let host: String
+    let connection: DesktopConnection
     private let session: URLSession
 
-    init(host: String, session: URLSession = .shared) {
-        self.host = host
+    init(connection: DesktopConnection, session: URLSession = .shared) {
+        self.connection = connection
         self.session = session
     }
 
@@ -22,17 +22,32 @@ struct DesktopAPI: Sendable {
     }
 
     private func get<Value: Decodable>(path: String, query: [URLQueryItem] = []) async throws -> Value {
-        try Task.checkCancellation()
+        var lastTransportError: Error?
+        for endpoint in connection.endpoints {
+            try Task.checkCancellation()
+            do {
+                return try await get(path: path, query: query, endpoint: endpoint)
+            } catch let error as URLError {
+                lastTransportError = error
+            }
+        }
+        throw lastTransportError ?? RemoteError.invalidHost
+    }
+
+    private func get<Value: Decodable>(
+        path: String, query: [URLQueryItem], endpoint: DesktopEndpoint
+    ) async throws -> Value {
         var components = URLComponents()
         components.scheme = "http"
-        components.host = host
-        components.port = 47623
+        components.host = endpoint.host
+        components.port = endpoint.port
         components.path = path
         components.queryItems = query.isEmpty ? nil : query
         guard let url = components.url else { throw RemoteError.invalidHost }
         var request = URLRequest(url: url)
-        request.timeoutInterval = 20
+        request.timeoutInterval = 8
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(connection.token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse else { throw RemoteError.incompatibleDesktop }

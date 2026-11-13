@@ -11,15 +11,33 @@ import (
 	"testing"
 )
 
-func TestBindRejectsNonTailscale(t *testing.T) {
-	for _, host := range []string{"0.0.0.0", "127.0.0.1", "192.168.1.8", "::", ""} {
-		if _, err := Bind(host); err == nil {
-			t.Fatalf("Bind(%q) accepted", host)
-		}
+func TestPrivateClientsAndAuthorization(t *testing.T) {
+	called := false
+	handler := PrivateClients(Authorized("secret", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	})))
+	request := httptest.NewRequest(http.MethodGet, "/v1/contexts", nil)
+	request.RemoteAddr = "192.168.1.9:54321"
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized || called {
+		t.Fatalf("missing token status=%d called=%v", response.Code, called)
 	}
-	addr, err := Bind("100.64.1.2")
-	if err != nil || addr != "100.64.1.2:47623" {
-		t.Fatalf("tailscale bind = %q %v", addr, err)
+	request = httptest.NewRequest(http.MethodGet, "/v1/contexts", nil)
+	request.RemoteAddr = "192.168.1.9:54321"
+	request.Header.Set("Authorization", "Bearer secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !called {
+		t.Fatalf("authorized status=%d called=%v", response.Code, called)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/v1/contexts", nil)
+	request.RemoteAddr = "8.8.8.8:54321"
+	request.Header.Set("Authorization", "Bearer secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("public source status=%d", response.Code)
 	}
 }
 
@@ -60,12 +78,8 @@ func (f *fakeBackend) ArgoApplications(context.Context) ([]ArgoApp, error) {
 }
 
 func TestRoutes(t *testing.T) {
-	// The test listener is loopback. Production bind is Bind, which rejects it.
-	srv := httptest.NewServer(Handler(&fakeBackend{}))
+	srv := httptest.NewServer(Handler("secret", &fakeBackend{}))
 	t.Cleanup(srv.Close)
-	if _, err := Bind("127.0.0.1"); err == nil {
-		t.Fatal("production bind accepted loopback")
-	}
 
 	ov := getJSON[Overview](t, srv.URL+"/v1/overview")
 	if ov.CPU != "metrics unavailable" || ov.Nodes != "1/1" {
@@ -80,7 +94,7 @@ func TestRoutes(t *testing.T) {
 		t.Fatalf("argo row has an operation field: %s", raw)
 	}
 
-	res, err := http.Post(srv.URL+"/v1/argo/sync", "application/json", nil)
+	res, err := authorizedRequest(http.MethodPost, srv.URL+"/v1/argo/sync")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +102,7 @@ func TestRoutes(t *testing.T) {
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("sync status %d", res.StatusCode)
 	}
-	res, err = http.Post(srv.URL+"/v1/apply", "application/json", nil)
+	res, err = authorizedRequest(http.MethodPost, srv.URL+"/v1/apply")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +125,7 @@ func TestChooseContainer(t *testing.T) {
 
 func getJSON[T any](t *testing.T, url string) T {
 	t.Helper()
-	res, err := http.Get(url)
+	res, err := authorizedRequest(http.MethodGet, url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,15 +140,24 @@ func getJSON[T any](t *testing.T, url string) T {
 	return out
 }
 
+func authorizedRequest(method, url string) (*http.Response, error) {
+	request, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer secret")
+	return http.DefaultClient.Do(request)
+}
+
 func TestHandlerOnLoopbackListener(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &http.Server{Handler: Handler(&fakeBackend{})}
+	srv := &http.Server{Handler: Handler("secret", &fakeBackend{})}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
-	res, err := http.Get("http://" + ln.Addr().String() + "/v1/pods")
+	res, err := authorizedRequest(http.MethodGet, "http://"+ln.Addr().String()+"/v1/pods")
 	if err != nil {
 		t.Fatal(err)
 	}

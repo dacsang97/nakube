@@ -43,9 +43,17 @@ func TestPhoneContextOverviewUsesSelectedCluster(t *testing.T) {
 	if err := session.Use(context.Background(), "desktop"); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(remote.Handler(Phone{App: New(session)}))
+	server := httptest.NewServer(remote.Handler("secret", Phone{App: New(session)}))
 	defer server.Close()
-	response, err := http.Get(server.URL + "/v1/contexts")
+	get := func(path string) (*http.Response, error) {
+		request, err := http.NewRequest(http.MethodGet, server.URL+path, nil)
+		if err != nil {
+			return nil, err
+		}
+		request.Header.Set("Authorization", "Bearer secret")
+		return http.DefaultClient.Do(request)
+	}
+	response, err := get("/v1/contexts")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +63,7 @@ func TestPhoneContextOverviewUsesSelectedCluster(t *testing.T) {
 	if err != nil || len(rows) != 2 || !rows[0].Current || rows[1].Name != "mobile/team" {
 		t.Fatalf("catalog=%+v err=%v", rows, err)
 	}
-	response, err = http.Get(server.URL + "/v1/overview?context=mobile%2Fteam")
+	response, err = get("/v1/overview?context=mobile%2Fteam")
 	if err != nil {
 		t.Fatal(err)
 	}

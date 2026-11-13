@@ -3,14 +3,14 @@ import SwiftUI
 
 private struct ConnectionAttempt: Equatable {
     let id = UUID()
-    let host: String
+    let connection: DesktopConnection
 }
 
 struct ConnectionView: View {
     var restoring = false
     var restorationError: String?
     var onAttempt: () -> Void = {}
-    let onConnect: (String, [ClusterContext]) -> Void
+    let onConnect: (DesktopConnection, [ClusterContext]) -> Void
     @Environment(\.scenePhase) private var scenePhase
     @State private var cameraPermission = AVCaptureDevice.authorizationStatus(for: .video)
     @State private var cameraError: String?
@@ -27,7 +27,7 @@ struct ConnectionView: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Connect your desktop").font(.largeTitle.bold())
-                    Text("Open NaKube on your desktop and scan its connection QR code. Keep both devices connected to Tailscale.")
+                    Text("Open NaKube on your desktop and scan its connection QR code. Connect through the same LAN or your Tailscale network.")
                         .foregroundStyle(.secondary)
                 }
                 if restoring {
@@ -43,7 +43,7 @@ struct ConnectionView: View {
                         ProgressView()
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Connecting to desktop…").font(.headline)
-                            Text(attempt.host).font(.subheadline).foregroundStyle(.secondary)
+                            Text(attempt.connection.displayHost).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
                     Button("Cancel Connection") { cancelAttempt() }
@@ -61,18 +61,18 @@ struct ConnectionView: View {
                 }
                 if manualEntry {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Desktop address").font(.headline)
-                        TextField("desktop.tailnet.ts.net", text: $address, axis: .vertical)
+                        Text("Pairing link").font(.headline)
+                        TextField("nakube://connect?…", text: $address, axis: .vertical)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .keyboardType(.URL)
                             .textContentType(.URL)
                             .textFieldStyle(.roundedBorder)
                             .focused($addressFocused)
-                            .accessibilityLabel("Desktop Tailscale address or NaKube link")
+                            .accessibilityLabel("NaKube pairing link")
                             .disabled(attempt != nil)
                             .accessibilityIdentifier("connection.address")
-                        Text("Enter the full .ts.net MagicDNS name shown on your desktop, or paste its NaKube link.")
+                        Text("Paste the complete pairing link from the desktop. An address alone cannot authenticate this phone.")
                             .font(.footnote).foregroundStyle(.secondary)
                         Button { submit(address) } label: {
                             Text("Connect").frame(maxWidth: .infinity, minHeight: 44)
@@ -87,7 +87,7 @@ struct ConnectionView: View {
                         scanPaused = true
                         addressFocused = true
                     } label: {
-                        Label("Enter Address Instead", systemImage: "keyboard")
+                        Label("Paste Pairing Link", systemImage: "keyboard")
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .buttonStyle(.bordered)
@@ -104,10 +104,10 @@ struct ConnectionView: View {
         .task(id: attempt) {
             guard let current = attempt else { return }
             do {
-                let contexts = try await DesktopAPI(host: current.host).contexts()
+                let contexts = try await DesktopAPI(connection: current.connection).contexts()
                 try Task.checkCancellation()
                 guard attempt == current else { return }
-                onConnect(current.host, contexts)
+                onConnect(current.connection, contexts)
             } catch {
                 guard !Task.isCancelled, attempt == current else { return }
                 connectionError = connectionMessage(error)
@@ -185,12 +185,12 @@ struct ConnectionView: View {
         addressFocused = false
         scanPaused = true
         connectionError = nil
-        guard let host = tailscaleHost(from: value) else {
+        guard let connection = desktopConnection(from: value) else {
             connectionError = RemoteError.invalidHost.localizedDescription
             return
         }
-        address = host
-        attempt = ConnectionAttempt(host: host)
+        address = value
+        attempt = ConnectionAttempt(connection: connection)
     }
 
     private func cancelAttempt() {

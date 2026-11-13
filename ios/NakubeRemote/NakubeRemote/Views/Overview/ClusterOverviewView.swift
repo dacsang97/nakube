@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ClusterOverviewView: View {
-    let host: String
+    let connection: DesktopConnection
     let context: ClusterContext
     @State private var overview: OverviewBody?
     @State private var errorText: String?
@@ -15,7 +15,7 @@ struct ClusterOverviewView: View {
             Section("Context") {
                 LabeledContent("Name", value: context.name)
                 if !context.cluster.isEmpty { LabeledContent("Cluster", value: context.cluster) }
-                LabeledContent("Desktop", value: host)
+                LabeledContent("Desktop", value: connection.displayHost)
             }
             if let errorText {
                 Section {
@@ -100,7 +100,7 @@ struct ClusterOverviewView: View {
         updatedAt = nil
         defer { if requestID == id { loading = false } }
         do {
-            let result = try await DesktopAPI(host: host).overview(context: context.name)
+            let result = try await DesktopAPI(connection: connection).overview(context: context.name)
             try Task.checkCancellation()
             guard requestID == id else { return }
             overview = result

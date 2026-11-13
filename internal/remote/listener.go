@@ -2,6 +2,9 @@ package remote
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,17 +19,22 @@ import (
 
 const Port = 47623
 
-// tailscaleCGNAT is the IPv4 range Tailscale assigns.
 var tailscaleCGNAT = mustCIDR("100.64.0.0/10")
 
-// Bind refuses any address that is not a Tailscale IP. Production listens
-// only on the address from `tailscale ip -4`.
-func Bind(host string) (string, error) {
-	ip := net.ParseIP(host)
-	if ip == nil || !isTailscale(ip) {
-		return "", fmt.Errorf("refusing non-tailscale bind %q", host)
+// Endpoint is one address encoded in the pairing QR and shown by Settings.
+type Endpoint struct {
+	Network string `json:"network"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+}
+
+// NewPairingToken returns a bearer credential suitable for one desktop.
+func NewPairingToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
 	}
-	return net.JoinHostPort(ip.String(), fmt.Sprintf("%d", Port)), nil
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 func isTailscale(ip net.IP) bool {
@@ -114,8 +122,40 @@ type Backend interface {
 	ArgoApplications(ctx context.Context) ([]ArgoApp, error)
 }
 
-// Handler serves the phone routes. Sync, apply, exec, and Helm are absent.
-func Handler(b Backend) http.Handler {
+// Authorized requires the token transferred in the pairing QR. The token is
+// never accepted in a URL, where logs and browser history could retain it.
+func Authorized(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if token == "" || len(got) != len(token) || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// PrivateClients admits loopback tests, private LAN peers, and Tailscale
+// peers. A wildcard listener therefore does not expose the API to a public
+// interface even when a machine has one.
+func PrivateClients(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		ip := net.ParseIP(host)
+		if err != nil || ip == nil || (!ip.IsLoopback() && !ip.IsPrivate() && !isTailscale(ip)) {
+			http.Error(w, "private network required", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Handler serves authenticated phone routes. Sync, apply, exec, and Helm are absent.
+func Handler(token string, b Backend) http.Handler {
+	return Authorized(token, routes(b))
+}
+
+func routes(b Backend) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/contexts", func(w http.ResponseWriter, r *http.Request) {
 		body, err := b.Contexts(r.Context())
@@ -228,22 +268,18 @@ func Owned(owners []cluster.Identity) bool {
 	return len(owners) > 0
 }
 
-// ListenTailscale runs tailscale ip -4 and binds that address. A missing
-// CLI or a down tailnet returns an error and does not listen.
-func ListenTailscale(ctx context.Context, lookup func(context.Context) (string, error), handler http.Handler) (*http.Server, error) {
-	ip, err := lookup(ctx)
+// Listen serves authenticated phone requests on LAN and Tailscale interfaces.
+// PrivateClients still rejects a request whose source is not private.
+func Listen(ctx context.Context, handler http.Handler) (*http.Server, error) {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", Port))
 	if err != nil {
 		return nil, err
 	}
-	addr, err := Bind(strings.TrimSpace(ip))
-	if err != nil {
-		return nil, err
-	}
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Handler: PrivateClients(handler), ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		<-ctx.Done()
+		_ = srv.Close()
+	}()
 	go func() { _ = srv.Serve(ln) }()
 	return srv, nil
 }

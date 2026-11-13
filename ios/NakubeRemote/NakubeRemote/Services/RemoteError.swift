@@ -9,7 +9,7 @@ enum RemoteError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidHost:
-            return "Use the desktop’s full .ts.net MagicDNS address or paste its NaKube QR link. Numeric IP addresses are not supported by this app’s secure transport policy."
+            return "Scan the desktop QR code or paste its complete NaKube pairing link. A LAN or Tailscale address without its pairing credential is not enough."
         case .http(let status):
             return "The desktop returned HTTP \(status). Keep NaKube running on your desktop and try again."
         case .incompatibleDesktop:
@@ -25,9 +25,9 @@ func connectionMessage(_ error: Error) -> String {
     if let urlError = error as? URLError {
         switch urlError.code {
         case .timedOut:
-            return "The desktop did not respond. Check that Tailscale is connected on both devices and NaKube is running, then try again."
+            return "The desktop did not respond. Use the same LAN or connect Tailscale on both devices, then try again."
         case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed:
-            return "Cannot reach your desktop. Connect both devices to the same Tailscale network and keep NaKube running on your desktop."
+            return "Cannot reach your desktop over the paired LAN or Tailscale addresses. Keep NaKube running on your desktop and try again."
         default:
             break
         }

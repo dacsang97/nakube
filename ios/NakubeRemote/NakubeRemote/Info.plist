@@ -7,11 +7,13 @@
 	<key>CFBundleName</key>
 	<string>NaKube</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan the QR code shown by Na Kube Desktop to connect over Tailscale.</string>
+	<string>Scan the QR code shown by NaKube Desktop to connect over your LAN or Tailscale.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connect to your NaKube desktop over your private Tailscale network.</string>
+	<string>Connect to your paired NaKube desktop on the local network.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
 			<key>ts.net</key>

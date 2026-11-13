@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 
+	"github.com/dacsang97/nakube/internal/agent"
 	"github.com/dacsang97/nakube/internal/cluster"
 )
 
@@ -20,18 +21,23 @@ type tabBody struct {
 	row             int
 	detailPanelOpen bool
 
-	mode       string
-	logLines   []LogLine
-	logFilter  string
-	logFollow  bool
-	logPod     string
-	logGen     int
-	logLoading bool
-	logCancel  context.CancelFunc
-	execTerm   *terminal.Terminal
-	execConn   io.Closer
-	execErr    string
-	yaml       *yamlScreen
+	mode           string
+	logLines       []LogLine
+	logFilter      string
+	logFollow      bool
+	logPod         string
+	logGen         int
+	logLoading     bool
+	logCancel      context.CancelFunc
+	execTerm       *terminal.Terminal
+	execConn       io.Closer
+	execErr        string
+	execTarget     execTarget
+	execRestarting bool
+	execAgent      agent.Identity
+	execGen        uint64
+	execCancel     context.CancelFunc
+	yaml           *yamlScreen
 
 	scaleTo       string
 	forwardLocal  string
@@ -188,6 +194,11 @@ func saveInto(a *App, b *tabBody) {
 	b.execTerm = a.execTerm
 	b.execConn = a.execConn
 	b.execErr = a.execErr
+	b.execTarget = a.execTarget
+	b.execRestarting = a.execRestarting
+	b.execAgent = a.execAgent
+	b.execGen = a.execGen
+	b.execCancel = a.execCancel
 	b.yaml = a.yaml
 	b.scaleTo = a.scaleTo
 	b.forwardLocal = a.forwardLocal
@@ -249,6 +260,11 @@ func loadFrom(a *App, b *tabBody) {
 	a.execTerm = b.execTerm
 	a.execConn = b.execConn
 	a.execErr = b.execErr
+	a.execTarget = b.execTarget
+	a.execRestarting = b.execRestarting
+	a.execAgent = b.execAgent
+	a.execGen = b.execGen
+	a.execCancel = b.execCancel
 	a.yaml = b.yaml
 	a.scaleTo = b.scaleTo
 	a.forwardLocal = b.forwardLocal
@@ -327,6 +343,10 @@ func releaseBody(b *tabBody) {
 	if b.logCancel != nil {
 		b.logCancel()
 		b.logCancel = nil
+	}
+	if b.execCancel != nil {
+		b.execCancel()
+		b.execCancel = nil
 	}
 	if b.execTerm != nil {
 		b.execTerm.Close()
