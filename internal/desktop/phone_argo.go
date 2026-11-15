@@ -5,10 +5,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dacsang97/nakube/internal/cluster"
-	"github.com/dacsang97/nakube/internal/remote"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/dacsang97/nakube/internal/cluster"
+	"github.com/dacsang97/nakube/internal/remote"
 )
 
 // ContextArgoApplications reads Argo CD from the requested kubeconfig context
