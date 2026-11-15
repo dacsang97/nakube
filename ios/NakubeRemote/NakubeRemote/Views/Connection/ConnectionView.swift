@@ -36,8 +36,8 @@ struct ConnectionView: View {
                 scanner
                     .frame(maxWidth: .infinity)
                     .frame(height: 280)
-                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                    .background(Color(uiColor: .secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 if let attempt {
                     HStack(spacing: 12) {
                         ProgressView()
@@ -46,7 +46,10 @@ struct ConnectionView: View {
                             Text(attempt.host).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
-                    Button("Cancel Connection") { cancelAttempt() }
+                    Button { cancelAttempt() } label: {
+                        Text("Cancel Connection").frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
                 }
                 if let error = connectionError ?? restorationError {
                     ErrorMessageView(title: "Connection not completed", message: error)
@@ -99,6 +102,8 @@ struct ConnectionView: View {
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
         }
+        // Let the keyboard follow the finger down instead of blocking the scanner and buttons.
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("NaKube")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: attempt) {
@@ -121,6 +126,9 @@ struct ConnectionView: View {
             }
         }
         .onDisappear { cancelAttempt() }
+        // The user is usually looking at the desktop while scanning, so confirm by touch too.
+        .sensoryFeedback(.success, trigger: attempt) { old, new in old == nil && new != nil }
+        .sensoryFeedback(.error, trigger: connectionError) { _, new in new != nil }
     }
 
     @ViewBuilder
@@ -167,6 +175,7 @@ struct ConnectionView: View {
                     UIApplication.shared.open(url)
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.large)
             } else if !settings {
                 Button("Retry Camera") {
                     cameraError = nil
@@ -174,6 +183,7 @@ struct ConnectionView: View {
                     scannerID = UUID()
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.large)
             }
         }
         .padding()

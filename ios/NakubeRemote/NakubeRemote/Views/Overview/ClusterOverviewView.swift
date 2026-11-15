@@ -12,11 +12,6 @@ struct ClusterOverviewView: View {
 
     var body: some View {
         List {
-            Section("Context") {
-                LabeledContent("Name", value: context.name)
-                if !context.cluster.isEmpty { LabeledContent("Cluster", value: context.cluster) }
-                LabeledContent("Desktop", value: host)
-            }
             if let errorText {
                 Section {
                     ErrorMessageView(title: "Couldn’t load overview", message: errorText)
@@ -48,11 +43,14 @@ struct ClusterOverviewView: View {
                     }
                 } else {
                     Section("Cluster Overview") {
-                        LabeledContent("Nodes", value: overview.nodes)
-                        LabeledContent("Pods", value: overview.pods)
-                        LabeledContent("Warnings", value: overview.warnings)
-                        LabeledContent("CPU", value: overview.cpu)
-                        LabeledContent("Memory", value: overview.memory)
+                        Group {
+                            LabeledContent("Nodes", value: overview.nodes)
+                            LabeledContent("Pods", value: overview.pods)
+                            LabeledContent("Warnings", value: overview.warnings)
+                            LabeledContent("CPU", value: overview.cpu)
+                            LabeledContent("Memory", value: overview.memory)
+                        }
+                        .monospacedDigit()
                         Text("Update and restart NaKube Desktop to enable charts.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
@@ -60,7 +58,7 @@ struct ClusterOverviewView: View {
                 if let updatedAt {
                     Section {
                         Text("Updated \(updatedAt.formatted(date: .omitted, time: .standard))")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                 }
             } else if loading {
@@ -70,7 +68,7 @@ struct ClusterOverviewView: View {
             }
         }
         .accessibilityIdentifier("cluster.overview")
-        .navigationTitle("Cluster Overview")
+        .navigationTitle("Overview")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
