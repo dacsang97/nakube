@@ -86,21 +86,46 @@ type App struct {
 
 	confirm *Confirm
 
-	mode         string
-	row          int
-	logLines     []LogLine
-	logFilter    string
-	logFollow    bool
-	logPod       string
-	logGen       int
-	logLoading   bool
-	logCancel    context.CancelFunc
-	execTerm     *terminal.Terminal
-	execConn     io.Closer
-	execErr      string
-	yaml         *yamlScreen
-	forwards     []*cluster.Forward
-	secretReveal bool
+	mode            string
+	row             int
+	logLines        []LogLine
+	logFilter       string
+	logFollow       bool
+	logPod          string
+	logGen          int
+	logLoading      bool
+	logCancel       context.CancelFunc
+	execTerm        *terminal.Terminal
+	execConn        io.Closer
+	execErr         string
+	yaml            *yamlScreen
+	forwards        []*cluster.Forward
+	forwardStarting map[uint16]forwardRequest
+	forwardKeys     map[*cluster.Forward]string
+	forwardFailed   map[string]forwardFailure
+	forwardEdit     string
+	forwardSeq      uint64
+	secretReveal    bool
+
+	podLogsOpen    func(namespace, pod, container string)
+	podShellOpen   func(namespace, pod, container string)
+	portForwardRun func(context.Context, string, string, string, uint16, uint16) (*cluster.Forward, error)
+	openExternal   func(string) error
+	contextUse     func(context.Context, string) error
+
+	podEnvPod       string
+	podEnvContainer string
+	podEnvInit      bool
+	podEnvName      string
+	podEnvValue     string
+	podEnvEditing   string
+	podEnvBusy      bool
+	podEnvErr       string
+	podEnvGen       uint64
+	podEnvBusyGen   uint64
+	podEnvContext   string
+	podEnvSwitching bool
+	podEnvMutate    podEnvMutator
 
 	scaleTo       string
 	forwardLocal  string
@@ -217,7 +242,13 @@ func New(session *cluster.Session) *App {
 		scaleTo:         "1",
 		forwardLocal:    "8080",
 		forwardRemote:   "80",
+		forwardStarting: map[uint16]forwardRequest{},
+		forwardKeys:     map[*cluster.Forward]string{},
+		forwardFailed:   map[string]forwardFailure{},
 		rollbackRev:     "1",
+		podEnvMutate:    session.SetContainerEnv,
+		contextUse:      session.Use,
+		openExternal:    mygo.Shell.OpenExternal,
 		helmNamespace:   "default",
 		overviewRole:    overview.Worker,
 		overviewMetric:  overview.CPU,
@@ -459,16 +490,29 @@ func (a *App) setErr(msg string) {
 }
 
 func (a *App) switchContext(name string) {
-	if name == "" || name == a.session.Current() {
+	oldContext := a.session.Current()
+	if name == "" || name == oldContext {
 		return
 	}
+	a.mu.Lock()
+	a.podEnvSwitching = true
+	a.mu.Unlock()
+	a.invalidate()
 	go func() {
-		if err := a.session.Use(context.Background(), name); err != nil {
-			a.setErr(publicError(err))
+		if err := a.contextUse(context.Background(), name); err != nil {
+			a.mu.Lock()
+			a.podEnvSwitching = false
+			a.errText = publicError(err)
+			a.mu.Unlock()
+			a.invalidate()
 			return
 		}
+		a.deactivateContextForwards(oldContext)
 		a.mu.Lock()
 		a.current = name
+		a.podEnvSwitching = false
+		a.resetPodEnvironmentStateLocked()
+		a.forwardEdit = ""
 		a.errText = ""
 		a.mu.Unlock()
 		a.loadContexts()
@@ -477,6 +521,38 @@ func (a *App) switchContext(name string) {
 		a.loadList(a.Selected())
 		a.invalidate()
 	}()
+}
+
+func (a *App) deactivateContextForwards(contextName string) {
+	a.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(a.forwardStarting))
+	for _, request := range a.forwardStarting {
+		if request.Context == contextName && request.Cancel != nil {
+			cancels = append(cancels, request.Cancel)
+		}
+	}
+	forwards := make([]*cluster.Forward, 0, len(a.forwards))
+	for _, fw := range a.forwards {
+		if fw != nil && fw.Context == contextName {
+			forwards = append(forwards, fw)
+		}
+	}
+	prefix := contextName + "|"
+	for key := range a.forwardFailed {
+		if strings.HasPrefix(key, prefix) {
+			delete(a.forwardFailed, key)
+		}
+	}
+	if strings.HasPrefix(a.forwardEdit, prefix) {
+		a.forwardEdit = ""
+	}
+	a.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	for _, fw := range forwards {
+		fw.Stop()
+	}
 }
 
 // View draws the window. It applies the coalesced snapshot on the frame.

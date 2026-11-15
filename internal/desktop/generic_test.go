@@ -12,7 +12,7 @@ func TestGenericMapCoversSidebar(t *testing.T) {
 	for _, id := range SidebarIDs() {
 		ids[id] = true
 	}
-	for _, forbidden := range []string{"resource-diagram", "flux", "overview", "workloads", "helm", "port-forwards"} {
+	for _, forbidden := range []string{"resource-diagram", "overview", "workloads", "helm", "port-forwards"} {
 		if _, ok := LookupKind(forbidden); ok {
 			t.Fatalf("%s is in the GVR map", forbidden)
 		}

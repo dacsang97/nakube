@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -155,6 +156,79 @@ func TestScaleDeployment(t *testing.T) {
 	}
 	if got != 3 {
 		t.Fatalf("replicas = %d", got)
+	}
+}
+
+func TestSetContainerEnvPatchesWorkloadTemplate(t *testing.T) {
+	dyn := fake.NewSimpleDynamicClient(runtime.NewScheme())
+	var patch map[string]any
+	dyn.PrependReactor("patch", "deployments", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		pa := action.(clienttesting.PatchAction)
+		if pa.GetPatchType() != types.StrategicMergePatchType {
+			t.Fatalf("patch type = %s", pa.GetPatchType())
+		}
+		if err := json.Unmarshal(pa.GetPatch(), &patch); err != nil {
+			t.Fatal(err)
+		}
+		return true, &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "apps/v1", "kind": "Deployment",
+			"metadata": map[string]any{"name": "web", "namespace": "ns"},
+		}}, nil
+	})
+	s := &Session{dyn: dyn}
+	value := ""
+	err := s.SetContainerEnv(context.Background(), "", Identity{Kind: "Deployment", Namespace: "ns", Name: "web"}, "app", false, "EMPTY", &value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := patch["spec"].(map[string]any)
+	template := spec["template"].(map[string]any)
+	podSpec := template["spec"].(map[string]any)
+	container := podSpec["containers"].([]any)[0].(map[string]any)
+	env := container["env"].([]any)[0].(map[string]any)
+	if container["name"] != "app" || env["name"] != "EMPTY" || env["value"] != "" {
+		t.Fatalf("patch = %#v", patch)
+	}
+	if _, ok := env["valueFrom"]; !ok {
+		t.Fatalf("patch did not clear valueFrom: %#v", env)
+	}
+	if err := s.SetContainerEnv(context.Background(), "", Identity{Kind: "Deployment", Namespace: "ns", Name: "web"}, "app", false, "EMPTY", nil); err != nil {
+		t.Fatal(err)
+	}
+	spec = patch["spec"].(map[string]any)
+	template = spec["template"].(map[string]any)
+	podSpec = template["spec"].(map[string]any)
+	container = podSpec["containers"].([]any)[0].(map[string]any)
+	env = container["env"].([]any)[0].(map[string]any)
+	if env["name"] != "EMPTY" || env["$patch"] != "delete" {
+		t.Fatalf("remove patch = %#v", patch)
+	}
+}
+
+func TestSetContainerEnvRejectsChangedContext(t *testing.T) {
+	called := false
+	dyn := fake.NewSimpleDynamicClient(runtime.NewScheme())
+	dyn.PrependReactor("patch", "deployments", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		called = true
+		return true, nil, nil
+	})
+	s := &Session{name: "dev", dyn: dyn}
+	value := "v"
+	err := s.SetContainerEnv(context.Background(), "prod", Identity{Kind: "Deployment", Namespace: "ns", Name: "web"}, "app", false, "KEY", &value)
+	if err == nil || !strings.Contains(err.Error(), "context changed") {
+		t.Fatalf("context mismatch error = %v", err)
+	}
+	if called {
+		t.Fatal("context mismatch reached the Kubernetes client")
+	}
+}
+
+func TestSetContainerEnvRejectsPod(t *testing.T) {
+	s := NewSession()
+	value := "v"
+	err := s.SetContainerEnv(context.Background(), "", Identity{Kind: "Pod", Namespace: "ns", Name: "p"}, "app", false, "KEY", &value)
+	if err == nil || !strings.Contains(err.Error(), "Pod") {
+		t.Fatal(err)
 	}
 }
 

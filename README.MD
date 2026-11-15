@@ -14,7 +14,7 @@ Go 1.27.3 or newer.
 go tool mygo dev
 ```
 
-Quit the window, or press Ctrl+C. `go tool mygo dev` sets `TERM`, so the login-shell import is skipped. A Dock launch runs that import in the background and does not wait for the first frame.
+Quit the window, or press Ctrl+C. `go tool mygo dev` sets `TERM`, so the login-shell import is skipped. A graphical launch runs that import in the background and does not wait for the first frame.
 
 ```sh
 go test ./...
@@ -40,9 +40,11 @@ One tab per screen. A click opens a preview and replaces the previous one. A dou
 
 ## Pods
 
-The Pods list shows these columns: Name, Namespace, Containers, CPU, Memory, Restarts, Controlled By, Node, QoS, Age, and Status. Each column but Containers sorts. CPU and memory come from metrics-server every 15 seconds while the list is shown, and read N/A when it has no sample. Status reads as kubectl's. Controlled By and Node open their Workloads or Nodes row in a pinned tab; an owner of another kind, as a custom resource, is plain text.
+The Pods list shows these columns: Name, Namespace, Containers, CPU, Memory, Restarts, Controlled By, Node, QoS, Age, and Status. Each column but Containers sorts. CPU and memory come from metrics-server every 15 seconds while the list is shown, and read N/A when it has no sample. Status uses the conventional synthesized pod status. Controlled By and Node open their Workloads or Nodes row in a pinned tab; an owner of another kind, as a custom resource, is plain text.
 
 Owner and Node links support Tab focus and Enter or Space activation, with a visible focus outline and at least a 40×40 desktop hit area. Container indicators wrap within their column rather than hiding additional containers. Loading uses the same table columns and horizontal scrolling as the inventory.
+
+Pod details list each regular and init container's environment in manifest order, including plain values, all `valueFrom` references, and `envFrom` sources without resolving Secret data. For Pods owned by a Deployment, StatefulSet, DaemonSet, or CronJob (including ReplicaSet and Job ownership chains), the drawer can add plain values directly and edit or remove existing entries on the owning pod template, triggering the normal rollout. Standalone Pods stay read-only because Kubernetes does not allow changing their live environment.
 
 ## Metrics
 
@@ -67,9 +69,9 @@ make lint
 
 Open **Settings → Na Kube Mobile** on the desktop. A phone that has never connected opens directly into the QR scanner; scan the desktop code to connect. Both devices must be signed in to the same Tailscale tailnet and MagicDNS must be enabled. The QR transfers only the desktop MagicDNS name and fixed port; the phone calls `http://<name>:47623` on the tailnet. Cleartext HTTP is allowed only for `ts.net`.
 
-After a successful connection, the phone opens the context catalog on subsequent launches. Choose a context to open the Cluster and Workloads areas. Cluster contains Overview, Nodes, Namespaces, Events, Leases, and process-owned Port-forwards. Workloads contains the aggregate inventory plus Pods, Deployments, ReplicaSets, DaemonSets, StatefulSets, Jobs, and CronJobs. Every list is searchable, opens a native detail screen, and supports pull to refresh. Pods additionally expose live container logs, confirmed restart for controller-owned pods, and confirmed delete. Reading or mutating the chosen context on the phone does not switch the desktop context or overwrite its persisted selection. Missing metrics-server is shown as unavailable, not zero. Port-forwards are read-only on iPhone and remain owned by the desktop process.
+After a successful connection, the phone opens the context catalog on subsequent launches. Choose a context to open the Cluster and Workloads areas. Cluster contains Overview, Nodes, Namespaces, Events, Leases, and process-owned Port-forwards. Workloads contains the aggregate inventory plus Pods, Deployments, ReplicaSets, DaemonSets, StatefulSets, Jobs, and CronJobs. Every list is searchable, opens a native detail screen, and supports pull to refresh. Pods additionally expose live container logs, confirmed restart for controller-owned pods, and confirmed delete. Reading or mutating the chosen context on the phone does not switch the desktop context or overwrite its persisted selection. Missing metrics-server is shown as unavailable, not zero. Port-forwards are read-only on iPhone, remain owned by the desktop process, and are stopped when the desktop switches context.
 
-The phone catalog uses `GET /v1/contexts` (credential-free name, cluster, and current fields). Context-scoped Cluster screens use `/v1/cluster/{overview|nodes|namespaces|events|leases}?context=<name>`. Workload inventory uses `GET /v1/workloads[/{resource}]?context=<name>`; pod logs, restart, and delete are nested below `/v1/workloads/pods/{namespace}/{name}` and carry the same context query. `GET /v1/port-forwards` returns the desktop process's active forwards. Legacy top-level `/v1/overview` and `/v1/pods` routes are not served.
+The phone catalog uses `GET /v1/contexts` (credential-free name, cluster, and current fields). Context-scoped Cluster screens use `/v1/cluster/{overview|nodes|namespaces|events|leases}?context=<name>`. Workload inventory uses `GET /v1/workloads[/{resource}]?context=<name>`; pod logs, restart, and delete are nested below `/v1/workloads/pods/{namespace}/{name}` and carry the same context query. `GET /v1/port-forwards` returns the desktop process's active forwards for its current context. Legacy top-level `/v1/overview` and `/v1/pods` routes are not served.
 
 The overview's numeric `charts` payload drives native CPU/memory utilization bars and node/pod health charts. Usage is compared with allocatable capacity; percentages above 100% remain visible. An absent or partial node-metrics response is unavailable, not zero. Loading shows layout-matched skeletons that respect Reduce Motion; no synthetic history is plotted.
 

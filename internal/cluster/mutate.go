@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/yaml"
 )
@@ -202,6 +203,66 @@ func (s *Session) Restart(ctx context.Context, id Identity) error {
 		},
 	}
 	data, err := json.Marshal(patch)
+	if err != nil {
+		return err
+	}
+	_, err = resourceFor(dyn, gvr, id.Namespace).Patch(ctx, id.Name, types.StrategicMergePatchType, data, metav1.PatchOptions{
+		FieldManager: fieldManager,
+	})
+	return err
+}
+
+// SetContainerEnv adds, replaces, or removes one environment variable from a
+// workload pod template. Pods themselves are intentionally unsupported because
+// Kubernetes does not permit changing their environment after creation.
+func (s *Session) SetContainerEnv(ctx context.Context, expectedContext string, id Identity, container string, init bool, name string, value *string) error {
+	switch id.Kind {
+	case "Deployment", "StatefulSet", "DaemonSet", "CronJob":
+	default:
+		return fmt.Errorf("environment variables are not editable for kind %q", id.Kind)
+	}
+	if id.Name == "" {
+		return errors.New("environment update requires a workload name")
+	}
+	if container == "" {
+		return errors.New("environment update requires a container name")
+	}
+	if problems := validation.IsEnvVarName(name); len(problems) != 0 {
+		return fmt.Errorf("invalid environment variable name %q: %s", name, problems[0])
+	}
+
+	env := map[string]any{"name": name}
+	if value == nil {
+		env["$patch"] = "delete"
+	} else {
+		env["value"] = *value
+		env["valueFrom"] = nil
+	}
+	containerField := "containers"
+	if init {
+		containerField = "initContainers"
+	}
+	template := map[string]any{
+		"spec": map[string]any{
+			containerField: []any{map[string]any{
+				"name": container,
+				"env":  []any{env},
+			}},
+		},
+	}
+	spec := map[string]any{"template": template}
+	if id.Kind == "CronJob" {
+		spec = map[string]any{"jobTemplate": map[string]any{"spec": map[string]any{"template": template}}}
+	}
+	data, err := json.Marshal(map[string]any{"spec": spec})
+	if err != nil {
+		return err
+	}
+	gvr, err := s.gvrForIdentity(id)
+	if err != nil {
+		return err
+	}
+	dyn, err := s.dynamicClientForContext(expectedContext)
 	if err != nil {
 		return err
 	}

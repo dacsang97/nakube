@@ -136,8 +136,8 @@ func rowFrom(pod *corev1.Pod, usage map[string]cluster.PodUsage) Row {
 	return row
 }
 
-// Status reads as kubectl's STATUS column: Terminating, an init step, a
-// container's waiting or exit reason, the pod's reason, else its phase.
+// Status prioritizes termination, init progress, container waiting or exit
+// reasons, the pod reason, and finally the pod phase.
 func Status(pod *corev1.Pod) (string, kit.Tone) {
 	reason := string(pod.Status.Phase)
 	if pod.Status.Reason != "" {
@@ -288,7 +288,7 @@ func sidecar(pod *corev1.Pod, name string) bool {
 	return false
 }
 
-// restarts counts app containers and sidecars, as kubectl's RESTARTS.
+// restarts counts application containers and restartable init sidecars.
 func restarts(pod *corev1.Pod) int32 {
 	var n int32
 	for _, s := range pod.Status.InitContainerStatuses {

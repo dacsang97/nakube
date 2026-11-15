@@ -26,8 +26,8 @@ func Draw(c *ui.Context, t *ui.Theme, v View, tab, rng *string, hover *int, icon
 }
 
 func toolbar(c *ui.Context, t *ui.Theme, tab, rng *string, hover *int, icons Icons) {
-	ui.Row(c).Gap(6).AlignItems(ui.Center).Wrap().Children(func() {
-		ui.Select(c, rng, Ranges()).Width(140).MinHeight(40).Label("Range")
+	ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+		ui.Select(c, rng, Ranges()).Width(64).MinWidth(0).MinHeight(40).Label("Range").Tooltip("Time range")
 		ids := cluster.MetricTabs()
 		selected := 0
 		for i, id := range ids {

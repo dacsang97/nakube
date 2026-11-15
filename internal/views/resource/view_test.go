@@ -38,8 +38,8 @@ func TestHeaderActionsAreSeparatedFromBodyActions(t *testing.T) {
 	if edit != "yaml" || remove != "delete" {
 		t.Fatalf("pod header actions = %q, %q", edit, remove)
 	}
-	if got := BodyActions("Pod"); !slices.Equal(got, []string{"logs", "exec", "forward"}) {
-		t.Fatalf("pod body actions = %v", got)
+	if got := BodyActions("Pod"); len(got) != 0 {
+		t.Fatalf("generic Pod body actions must defer container runtime actions to the Pod drawer: %v", got)
 	}
 	edit, remove = HeaderActions("Release")
 	if edit != "" || remove != "uninstall" {
