@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -16,8 +17,8 @@ import (
 
 const argoRefreshAnnotation = "argocd.argoproj.io/refresh"
 
-// ArgoApp is a desktop read of one Application. It has no operation request
-// the phone could post back. Phone rows stay on ArgoApplication.
+// ArgoApp is the read model for one Application. It contains observed state,
+// never an operation request that a client could post back.
 type ArgoApp struct {
 	Name             string
 	Namespace        string
@@ -170,7 +171,7 @@ func ParseArgoProject(obj *unstructured.Unstructured) ArgoProject {
 		Name:         obj.GetName(),
 		Namespace:    obj.GetNamespace(),
 		Description:  nestedString(obj.Object, "spec", "description"),
-		SourceRepos:  nestedStrings(obj.Object, "spec", "sourceRepos"),
+		SourceRepos:  sanitizeArgoURLs(nestedStrings(obj.Object, "spec", "sourceRepos")),
 		Destinations: dests,
 		Roles:        len(roles),
 		Created:      obj.GetCreationTimestamp().Time,
@@ -194,7 +195,7 @@ func ParseArgoRepository(obj *unstructured.Unstructured) ArgoRepository {
 		Name:      name,
 		Namespace: obj.GetNamespace(),
 		Type:      kind,
-		URL:       decodeSecret(obj, "url"),
+		URL:       sanitizeArgoURL(decodeSecret(obj, "url")),
 		Project:   decodeSecret(obj, "project"),
 	}
 }
@@ -211,7 +212,7 @@ func ParseArgoCluster(obj *unstructured.Unstructured) ArgoCluster {
 	return ArgoCluster{
 		Name:      name,
 		Namespace: obj.GetNamespace(),
-		Server:    decodeSecret(obj, "server"),
+		Server:    sanitizeArgoURL(decodeSecret(obj, "server")),
 	}
 }
 
@@ -371,7 +372,7 @@ func argoSources(obj map[string]any) []ArgoSource {
 
 func argoSource(m map[string]any) ArgoSource {
 	return ArgoSource{
-		RepoURL:        nestedString(m, "repoURL"),
+		RepoURL:        sanitizeArgoURL(nestedString(m, "repoURL")),
 		Path:           nestedString(m, "path"),
 		Chart:          nestedString(m, "chart"),
 		TargetRevision: nestedString(m, "targetRevision"),
@@ -399,9 +400,52 @@ func argoSourceLine(sources []ArgoSource) string {
 	return strings.Join(parts, "; ")
 }
 
+func sanitizeArgoURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err == nil && parsed.Host != "" {
+		if parsed.User == nil {
+			return raw
+		}
+		parsed.User = nil
+		return parsed.String()
+	}
+	scheme := strings.Index(raw, "://")
+	if scheme >= 0 {
+		hostStart := scheme + 3
+		hostEnd := strings.IndexByte(raw[hostStart:], '/')
+		if hostEnd < 0 {
+			hostEnd = len(raw)
+		} else {
+			hostEnd += hostStart
+		}
+		if at := strings.LastIndexByte(raw[hostStart:hostEnd], '@'); at >= 0 {
+			return raw[:hostStart] + raw[hostStart+at+1:]
+		}
+		return raw
+	}
+	at := strings.LastIndexByte(raw, '@')
+	if at <= 0 || strings.Contains(raw[:at], "/") {
+		return raw
+	}
+	hostPath := raw[at+1:]
+	colon := strings.IndexByte(hostPath, ':')
+	if colon <= 0 || colon == len(hostPath)-1 {
+		return raw
+	}
+	return hostPath
+}
+
+func sanitizeArgoURLs(values []string) []string {
+	out := make([]string, len(values))
+	for i, value := range values {
+		out[i] = sanitizeArgoURL(value)
+	}
+	return out
+}
+
 func argoDestination(obj map[string]any, fields ...string) string {
 	name := nestedString(obj, append(fields, "name")...)
-	server := nestedString(obj, append(fields, "server")...)
+	server := sanitizeArgoURL(nestedString(obj, append(fields, "server")...))
 	ns := nestedString(obj, append(fields, "namespace")...)
 	target := name
 	if target == "" {

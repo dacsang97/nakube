@@ -37,6 +37,61 @@ struct DesktopAPI: Sendable {
         try await contextList(path: "/v1/cluster/leases", context: context)
     }
 
+    func argoApplications(context: String) async throws -> [ArgoApplication] {
+        try await contextList(path: "/v1/argo/applications", context: context)
+    }
+
+    func argoApplicationSets(context: String) async throws -> [ArgoApplicationSet] {
+        try await contextList(path: "/v1/argo/applicationsets", context: context)
+    }
+
+    func argoProjects(context: String) async throws -> [ArgoProject] {
+        try await contextList(path: "/v1/argo/appprojects", context: context)
+    }
+
+    func argoRepositories(context: String) async throws -> [ArgoRepository] {
+        try await contextList(path: "/v1/argo/repositories", context: context)
+    }
+
+    func argoClusters(context: String) async throws -> [ArgoCluster] {
+        try await contextList(path: "/v1/argo/clusters", context: context)
+    }
+
+    func syncArgoApplication(context: String, namespace: String, name: String, revision: String, prune: Bool) async throws {
+        try await post(
+            path: "/v1/argo/applications/\(namespace)/\(name)/sync", context: context,
+            body: ArgoSyncBody(revision: revision, strategy: "hook", dryRun: false, prune: prune)
+        )
+    }
+
+    func refreshArgoApplication(context: String, namespace: String, name: String, hard: Bool) async throws {
+        try await post(
+            path: "/v1/argo/applications/\(namespace)/\(name)/refresh", context: context,
+            body: ArgoRefreshBody(kind: hard ? "hard" : "normal")
+        )
+    }
+
+    func rollbackArgoApplication(context: String, namespace: String, name: String, id: Int64, prune: Bool) async throws {
+        try await post(
+            path: "/v1/argo/applications/\(namespace)/\(name)/rollback", context: context,
+            body: ArgoRollbackBody(id: id, prune: prune)
+        )
+    }
+
+    func deleteArgoResource(context: String, resource: String, namespace: String, name: String, cascade: String = "") async throws {
+        try await post(
+            path: "/v1/argo/\(resource)/\(namespace)/\(name)/delete", context: context,
+            body: ArgoDeleteBody(cascade: cascade)
+        )
+    }
+
+    func syncOutOfSyncArgoApplications(context: String, prune: Bool) async throws {
+        try await post(path: "/v1/argo/applications/sync-out-of-sync", context: context, body: ArgoFleetBody(prune: prune))
+    }
+
+    func refreshAllArgoApplications(context: String) async throws {
+        try await post(path: "/v1/argo/applications/refresh-all", context: context)
+    }
     func portForwards() async throws -> [ClusterPortForward] {
         try await get(path: "/v1/port-forwards")
     }
@@ -60,7 +115,7 @@ struct DesktopAPI: Sendable {
         )
         request.timeoutInterval = 24 * 60 * 60
         let (bytes, response) = try await session.bytes(for: request)
-        try validate(response)
+        try validate(response, data: Data())
         for try await line in bytes.lines {
             try Task.checkCancellation()
             await onLine(line)
@@ -88,6 +143,28 @@ struct DesktopAPI: Sendable {
         let ok: Bool
     }
 
+    private struct ArgoSyncBody: Encodable { let revision: String; let strategy: String; let dryRun: Bool; let prune: Bool }
+    private struct ArgoRefreshBody: Encodable { let kind: String }
+    private struct ArgoRollbackBody: Encodable { let id: Int64; let prune: Bool }
+    private struct ArgoDeleteBody: Encodable { let cascade: String }
+    private struct ArgoFleetBody: Encodable { let prune: Bool }
+
+    /// Bodyless variant for routes whose server contract requires an empty request body.
+    private func post(path: String, context: String) async throws {
+        let response: MutationResponse = try await send(
+            method: "POST", path: path, query: contextQuery(context)
+        )
+        guard response.ok else { throw RemoteError.incompatibleDesktop }
+    }
+
+    private func post<Body: Encodable>(path: String, context: String, body: Body) async throws {
+        let encoded = try JSONEncoder().encode(body)
+        let response: MutationResponse = try await send(
+            method: "POST", path: path, query: contextQuery(context), body: encoded
+        )
+        guard response.ok else { throw RemoteError.incompatibleDesktop }
+    }
+
     private func contextList<Value: Decodable>(path: String, context: String) async throws -> Value {
         try await get(path: path, query: contextQuery(context))
     }
@@ -103,14 +180,19 @@ struct DesktopAPI: Sendable {
     private func send<Value: Decodable>(
         method: String,
         path: String,
-        query: [URLQueryItem] = []
+        query: [URLQueryItem] = [],
+        body: Data? = nil
     ) async throws -> Value {
         try Task.checkCancellation()
         var request = try makeRequest(path: path, query: query)
         request.httpMethod = method
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
-        try validate(response)
+        try validate(response, data: data)
         do {
             return try JSONDecoder().decode(Value.self, from: data)
         } catch {
@@ -132,8 +214,15 @@ struct DesktopAPI: Sendable {
         return request
     }
 
-    private func validate(_ response: URLResponse) throws {
+    private func validate(_ response: URLResponse, data: Data) throws {
         guard let response = response as? HTTPURLResponse else { throw RemoteError.incompatibleDesktop }
-        guard (200..<300).contains(response.statusCode) else { throw RemoteError.http(response.statusCode) }
+        guard (200..<300).contains(response.statusCode) else {
+            let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.error
+            throw RemoteError.http(response.statusCode, message)
+        }
+    }
+
+    private struct ErrorResponse: Decodable {
+        let error: String
     }
 }

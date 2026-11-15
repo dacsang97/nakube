@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -53,5 +54,27 @@ func TestArgoDashboardFrame(t *testing.T) {
 	}
 	if tt.HasText("Install") {
 		t.Fatal("dashboard offers to install Argo")
+	}
+}
+
+func TestApplyTargetsAttemptsLaterTargetsAndAggregatesFailures(t *testing.T) {
+	targets := []syncTarget{
+		{Namespace: "argo", Name: "first"},
+		{Namespace: "argo", Name: "middle"},
+		{Namespace: "team", Name: "later"},
+	}
+	var attempted []string
+	err := applyTargets(targets, func(target syncTarget) error {
+		attempted = append(attempted, target.Namespace+"/"+target.Name)
+		if target.Name == "middle" {
+			return errors.New("permission denied")
+		}
+		return nil
+	})
+	if len(attempted) != 3 || attempted[2] != "team/later" {
+		t.Fatalf("attempted=%v", attempted)
+	}
+	if err == nil || err.Error() != "argo/middle: permission denied" {
+		t.Fatalf("error=%v", err)
 	}
 }

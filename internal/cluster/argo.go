@@ -22,14 +22,6 @@ type ArgoSyncOptions struct {
 	Prune    bool
 }
 
-// ArgoApplication is a phone-safe read. It has no operation field.
-type ArgoApplication struct {
-	Name      string
-	Namespace string
-	Sync      string
-	Health    string
-}
-
 func argoGVR(resource string) schema.GroupVersionResource {
 	return schema.GroupVersionResource{Group: "argoproj.io", Version: "v1alpha1", Resource: resource}
 }
@@ -73,7 +65,7 @@ func BuildArgoRollbackPatch(id int64, prune bool) ([]byte, error) {
 	return json.Marshal(body)
 }
 
-// SyncArgo patches an Application. It is not a phone method.
+// SyncArgo patches an Application with a confirmed sync operation.
 func (s *Session) SyncArgo(ctx context.Context, namespace, name string, opts ArgoSyncOptions) error {
 	data, err := BuildArgoSyncPatch(opts)
 	if err != nil {
@@ -159,18 +151,4 @@ func setArgoFinalizer(obj *unstructured.Unstructured, keep bool) error {
 	}
 	obj.SetFinalizers(out)
 	return nil
-}
-
-// ListArgoApplications reads Application status for the phone.
-// A missing CRD is a NotFound error. The row has no operation field.
-func (s *Session) ListArgoApplications(ctx context.Context) ([]ArgoApplication, error) {
-	apps, err := s.ListArgoApps(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ArgoApplication, len(apps))
-	for i, app := range apps {
-		out[i] = ArgoApplication{Name: app.Name, Namespace: app.Namespace, Sync: app.Sync, Health: app.Health}
-	}
-	return out, nil
 }
