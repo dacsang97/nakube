@@ -9,7 +9,7 @@ struct SkeletonView: View {
     @State private var pulsing = false
 
     var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius)
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(.quaternary)
             .frame(width: width, height: height)
             .opacity(reduceMotion || !pulsing ? 1 : 0.5)

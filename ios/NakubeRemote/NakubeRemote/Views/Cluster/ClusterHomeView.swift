@@ -7,11 +7,11 @@ struct ClusterHomeView: View {
     var body: some View {
         List {
             Section("Context") {
-                LabeledContent("Name", value: context.name)
-                if !context.cluster.isEmpty {
-                    LabeledContent("Cluster", value: context.cluster)
+                ValueRow("Name", value: context.name)
+                if !context.cluster.isEmpty && context.cluster != context.name {
+                    ValueRow("Cluster", value: context.cluster)
                 }
-                LabeledContent("Desktop", value: host)
+                ValueRow("Desktop", value: host)
             }
             Section("Cluster") {
                 NavigationLink {
@@ -49,7 +49,7 @@ struct ClusterHomeView: View {
                 NavigationLink {
                     WorkloadsHomeView(host: host, context: context)
                 } label: {
-                    destination("Workloads", icon: "square.3.layers.3d")
+                    destination("All Workloads", icon: "square.grid.2x2")
                 }
                 ForEach(WorkloadResource.allCases) { resource in
                     NavigationLink {
@@ -61,7 +61,7 @@ struct ClusterHomeView: View {
             }
         }
         .accessibilityIdentifier("cluster.home")
-        .navigationTitle("Cluster")
+        .navigationTitle(context.displayName)
         .navigationBarTitleDisplayMode(.inline)
     }
 

@@ -12,7 +12,7 @@ struct ClusterNodesView: View {
             emptyIcon: "server.rack",
             load: { try await DesktopAPI(host: host).nodes(context: context.name) },
             rowContent: { NodeRow(node: $0) },
-            detailContent: { NodeDetailView(node: $0) }
+            detailContent: { item, _ in NodeDetailView(node: item) }
         )
         .accessibilityIdentifier("cluster.nodes")
     }
@@ -30,7 +30,7 @@ struct ClusterNamespacesView: View {
             emptyIcon: "square.stack.3d.up",
             load: { try await DesktopAPI(host: host).namespaces(context: context.name) },
             rowContent: { NamespaceRow(namespace: $0) },
-            detailContent: { NamespaceDetailView(namespace: $0) }
+            detailContent: { item, _ in NamespaceDetailView(namespace: item) }
         )
         .accessibilityIdentifier("cluster.namespaces")
     }
@@ -48,7 +48,7 @@ struct ClusterEventsView: View {
             emptyIcon: "bolt.horizontal.circle",
             load: { try await DesktopAPI(host: host).events(context: context.name) },
             rowContent: { EventRow(event: $0) },
-            detailContent: { EventDetailView(event: $0) }
+            detailContent: { item, _ in EventDetailView(event: item) }
         )
         .accessibilityIdentifier("cluster.events")
     }
@@ -66,7 +66,7 @@ struct ClusterLeasesView: View {
             emptyIcon: "timer",
             load: { try await DesktopAPI(host: host).leases(context: context.name) },
             rowContent: { LeaseRow(lease: $0) },
-            detailContent: { LeaseDetailView(lease: $0) }
+            detailContent: { item, _ in LeaseDetailView(lease: item) }
         )
         .accessibilityIdentifier("cluster.leases")
     }
@@ -83,7 +83,7 @@ struct ClusterPortForwardsView: View {
             emptyIcon: "arrow.left.arrow.right",
             load: { try await DesktopAPI(host: host).portForwards() },
             rowContent: { PortForwardRow(forward: $0) },
-            detailContent: { PortForwardDetailView(forward: $0) }
+            detailContent: { item, _ in PortForwardDetailView(forward: item) }
         )
         .accessibilityIdentifier("cluster.port-forwards")
     }
@@ -93,18 +93,20 @@ private struct NodeRow: View {
     let node: ClusterNode
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(node.name).font(.headline)
-                Spacer()
-                StatusText(text: node.ready ? "Ready" : "Not ready", healthy: node.ready)
+                    .lineLimit(2).truncationMode(.middle)
+                Spacer(minLength: 8)
+                StatusBadge(text: node.ready ? "Ready" : "Not ready", tone: node.ready ? .ok : .warning)
             }
-            Text(node.roles.isEmpty ? "No role" : node.roles.joined(separator: ", "))
-                .font(.subheadline).foregroundStyle(.secondary)
+            // Managed clusters (EKS, GKE) leave roles empty, so show the version instead of "No role" on every row.
+            Text(node.roles.isEmpty ? node.version : node.roles.joined(separator: ", "))
+                .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             Text("CPU \(ClusterFormat.percent(node.cpu)) · Memory \(ClusterFormat.percent(node.memory))")
-                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                .font(.footnote).foregroundStyle(.secondary).monospacedDigit()
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
     }
 }
 
@@ -116,7 +118,7 @@ private struct NodeDetailView: View {
             Section("Status") {
                 LabeledContent("Ready", value: node.ready ? "Yes" : "No")
                 LabeledContent("Roles", value: node.roles.isEmpty ? "None" : node.roles.joined(separator: ", "))
-                LabeledContent("Version", value: node.version.isEmpty ? "Unknown" : node.version)
+                ValueRow("Version", value: node.version.isEmpty ? "Unknown" : node.version)
                 LabeledContent("Created", value: RemoteDate.relative(node.createdAt))
             }
             Section("Utilization") {
@@ -143,16 +145,16 @@ private struct NamespaceRow: View {
     let namespace: ClusterNamespace
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(namespace.name).font(.headline)
-                Spacer()
-                StatusText(text: namespace.phase, healthy: namespace.phase == "Active")
-            }
-            Text("\(namespace.labels.count) labels · \(RemoteDate.relative(namespace.createdAt))")
-                .font(.caption).foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline) {
+            Text(namespace.name).font(.headline)
+                .lineLimit(2).truncationMode(.middle)
+            Spacer(minLength: 8)
+            Text(RemoteDate.relative(namespace.createdAt, abbreviated: true))
+                .font(.footnote).foregroundStyle(.secondary)
+                .fixedSize()
+            StatusBadge(text: namespace.phase, tone: namespace.phase == "Active" ? .ok : .warning)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
     }
 }
 
@@ -168,7 +170,7 @@ private struct NamespaceDetailView: View {
             if !namespace.labels.isEmpty {
                 Section("Labels") {
                     ForEach(namespace.labels.keys.sorted(), id: \.self) { key in
-                        LabeledContent(key, value: namespace.labels[key] ?? "")
+                        ValueRow(key, value: namespace.labels[key] ?? "")
                     }
                 }
             }
@@ -187,18 +189,36 @@ private struct EventRow: View {
     let event: ClusterEvent
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(event.reason.isEmpty ? event.object : event.reason).font(.headline)
-                Spacer()
-                StatusText(text: event.type, healthy: event.type != "Warning")
+        VStack(alignment: .leading, spacing: 3) {
+            // Mail-style header: what happened on the left, when on the right.
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if event.type == "Warning" {
+                    StatusBadge(text: "Warning", tone: .warning)
+                }
+                Text(event.reason.isEmpty ? "Event" : event.reason).font(.headline).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(timeText)
+                    .font(.footnote).foregroundStyle(.secondary).monospacedDigit()
+                    .fixedSize()
             }
-            Text(event.object).font(.subheadline).foregroundStyle(.secondary)
-            Text(event.message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            Text("\(event.namespace) · \(RemoteDate.relative(event.lastSeen))")
-                .font(.caption2).foregroundStyle(.tertiary)
+            Text(subject)
+                .font(.subheadline).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
+            if !event.message.isEmpty {
+                Text(event.message)
+                    .font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+            }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
+    }
+
+    private var subject: String {
+        [event.namespace, event.object].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private var timeText: String {
+        let time = RemoteDate.relative(event.lastSeen, abbreviated: true)
+        return event.count > 1 ? "×\(event.count) · \(time)" : time
     }
 }
 
@@ -210,9 +230,9 @@ private struct EventDetailView: View {
             Section("Event") {
                 LabeledContent("Type", value: event.type)
                 LabeledContent("Reason", value: event.reason.isEmpty ? "Unknown" : event.reason)
-                LabeledContent("Object", value: event.object.isEmpty ? "Unknown" : event.object)
+                ValueRow("Object", value: event.object.isEmpty ? "Unknown" : event.object)
                 LabeledContent("Namespace", value: event.namespace)
-                LabeledContent("Source", value: event.source.isEmpty ? "Unknown" : event.source)
+                ValueRow("Source", value: event.source.isEmpty ? "Unknown" : event.source)
                 LabeledContent("Count", value: String(event.count))
                 LabeledContent("First seen", value: RemoteDate.relative(event.firstSeen))
                 LabeledContent("Last seen", value: RemoteDate.relative(event.lastSeen))
@@ -230,13 +250,20 @@ private struct LeaseRow: View {
     let lease: ClusterLease
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(lease.name).font(.headline)
-            Text(lease.namespace).font(.subheadline).foregroundStyle(.secondary)
-            Text(lease.holder.isEmpty ? "No holder" : lease.holder)
-                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(lease.name).font(.headline)
+                    .lineLimit(2).truncationMode(.middle)
+                Spacer(minLength: 8)
+                Text(RemoteDate.relative(lease.renewTime, abbreviated: true))
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .fixedSize()
+            }
+            Text([lease.namespace, lease.holder.isEmpty ? "No holder" : lease.holder].joined(separator: " · "))
+                .font(.subheadline).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
     }
 }
 
@@ -247,7 +274,7 @@ private struct LeaseDetailView: View {
         List {
             Section("Lease") {
                 LabeledContent("Namespace", value: lease.namespace)
-                LabeledContent("Holder", value: lease.holder.isEmpty ? "None" : lease.holder)
+                ValueRow("Holder", value: lease.holder.isEmpty ? "None" : lease.holder)
                 LabeledContent("Renewed", value: RemoteDate.relative(lease.renewTime))
                 if let duration = lease.durationSeconds {
                     LabeledContent("Duration", value: "\(duration) seconds")
@@ -267,13 +294,19 @@ private struct PortForwardRow: View {
     let forward: ClusterPortForward
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(forward.pod).font(.headline)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(forward.pod).font(.headline)
+                    .lineLimit(2).truncationMode(.middle)
+                Spacer(minLength: 8)
+                Text("\(forward.local) → \(forward.remote)")
+                    .font(.subheadline.weight(.medium)).monospacedDigit()
+                    .fixedSize()
+            }
             Text(forward.namespace).font(.subheadline).foregroundStyle(.secondary)
-            Text("localhost:\(forward.local) → \(forward.remote)")
-                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                .lineLimit(1).truncationMode(.middle)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
     }
 }
 
@@ -284,7 +317,7 @@ private struct PortForwardDetailView: View {
         List {
             Section("Port-forward") {
                 LabeledContent("Namespace", value: forward.namespace)
-                LabeledContent("Pod", value: forward.pod)
+                ValueRow("Pod", value: forward.pod)
                 LabeledContent("Local", value: "localhost:\(forward.local)")
                 LabeledContent("Remote", value: String(forward.remote))
             }
@@ -298,16 +331,6 @@ private struct PortForwardDetailView: View {
     }
 }
 
-private struct StatusText: View {
-    let text: String
-    let healthy: Bool
-
-    var body: some View {
-        Label(text, systemImage: healthy ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(healthy ? .green : .orange)
-    }
-}
 
 private struct ResourceReadingView: View {
     enum Unit { case cpu, memory }

@@ -13,7 +13,9 @@ struct WorkloadResourceView: View {
             emptyIcon: resource.icon,
             load: { try await DesktopAPI(host: host).workloads(context: context.name, resource: resource) },
             rowContent: { WorkloadRow(workload: $0, showsKind: false) },
-            detailContent: { WorkloadDetailView(host: host, context: context, workload: $0) }
+            detailContent: { workload, reload in
+                WorkloadDetailView(host: host, context: context, workload: workload, onChange: reload)
+            }
         )
         .accessibilityIdentifier("workloads.\(resource.rawValue)")
     }
@@ -24,27 +26,25 @@ struct WorkloadRow: View {
     var showsKind = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(workload.name).font(.headline)
-                Spacer()
-                WorkloadStatusLabel(workload: workload)
+                    .lineLimit(2).truncationMode(.middle)
+                Spacer(minLength: 8)
+                StatusBadge(text: workload.status, tone: workload.statusTone)
             }
-            HStack(spacing: 6) {
-                if showsKind {
-                    Text(workload.kind)
-                    Text("·")
-                }
-                Text(workload.namespace)
-                Spacer()
-                Text("Ready \(workload.readyText)").monospacedDigit()
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(showsKind ? "\(workload.kind) · \(workload.namespace)" : workload.namespace)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 8)
+                Text("\(workload.readyText) · \(RemoteDate.relative(workload.createdAt, abbreviated: true))")
+                    .monospacedDigit()
+                    .fixedSize()
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
-            Text(RemoteDate.relative(workload.createdAt))
-                .font(.caption).foregroundStyle(.tertiary)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
     }
 }
 
@@ -52,6 +52,8 @@ struct WorkloadDetailView: View {
     let host: String
     let context: ClusterContext
     let workload: Workload
+    /// Called after a pod action succeeds so the list behind this screen drops stale rows.
+    var onChange: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
     @State private var confirmation: PodAction?
@@ -62,7 +64,7 @@ struct WorkloadDetailView: View {
         List {
             Section("Status") {
                 LabeledContent("Kind", value: workload.kind)
-                LabeledContent("Namespace", value: workload.namespace)
+                ValueRow("Namespace", value: workload.namespace)
                 LabeledContent("Status", value: workload.status)
                 LabeledContent("Ready", value: workload.readyText)
                 LabeledContent("Created", value: RemoteDate.relative(workload.createdAt))
@@ -70,7 +72,7 @@ struct WorkloadDetailView: View {
             if !workload.facts.isEmpty {
                 Section("Details") {
                     ForEach(workload.facts) { fact in
-                        LabeledContent(fact.label, value: fact.value)
+                        ValueRow(fact.label, value: fact.value)
                     }
                 }
             }
@@ -80,6 +82,7 @@ struct WorkloadDetailView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
                                 Text(container.name).font(.headline)
+                                    .lineLimit(2).truncationMode(.middle)
                                 Spacer()
                                 if workload.resource == WorkloadResource.pods.rawValue {
                                     Image(systemName: container.ready ? "checkmark.circle.fill" : "circle")
@@ -158,6 +161,8 @@ struct WorkloadDetailView: View {
             case .delete:
                 try await api.deletePod(context: context.name, namespace: workload.namespace, name: workload.name)
             }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            onChange()
             dismiss()
         } catch {
             guard !Task.isCancelled else { return }
@@ -179,28 +184,6 @@ private enum PodAction: String, Identifiable {
             "The current pod will be deleted and its controller will recreate it."
         case .delete:
             "The pod will be deleted from the selected cluster. This cannot be undone."
-        }
-    }
-}
-
-private struct WorkloadStatusLabel: View {
-    let workload: Workload
-
-    var body: some View {
-        let style = self.style
-        Label(workload.status, systemImage: style.icon)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(style.color)
-    }
-
-    private var style: (icon: String, color: Color) {
-        switch workload.status {
-        case "Healthy", "Succeeded", "Scheduled":
-            ("checkmark.circle.fill", .green)
-        case "Failed", "Unknown":
-            ("exclamationmark.triangle.fill", .red)
-        default:
-            ("clock.fill", .orange)
         }
     }
 }

@@ -5,6 +5,8 @@ struct WorkloadsHomeView: View {
     let context: ClusterContext
 
     @State private var workloads: [Workload]?
+    // Derived once per load rather than on every render, which includes each search keystroke.
+    @State private var summary: WorkloadSummary?
     @State private var query = ""
     @State private var errorText: String?
     @State private var loading = false
@@ -33,20 +35,23 @@ struct WorkloadsHomeView: View {
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Loading workloads")
-            } else if let workloads {
-                let summary = WorkloadSummary(workloads)
+            } else if let workloads, let summary {
+                let visibleWorkloads = filteredWorkloads
                 Section("Summary") {
-                    LabeledContent("Total", value: String(summary.total))
-                    LabeledContent("Healthy", value: String(summary.healthy))
-                    LabeledContent("Active", value: String(summary.active))
-                    LabeledContent("Attention", value: String(summary.attention))
-                    LabeledContent("Suspended", value: String(summary.suspended))
-                    VStack(alignment: .leading, spacing: 8) {
-                        LabeledContent("Pod readiness", value: summary.desired > 0 ? "\(summary.ready)/\(summary.desired)" : "—")
-                        if summary.desired > 0 {
-                            ProgressView(value: min(Double(summary.ready) / Double(summary.desired), 1))
+                    // One glanceable grid instead of six stacked rows, so the inventory stays near the top.
+                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 14) {
+                        GridRow {
+                            stat("Total", summary.total, color: .primary)
+                            stat("Healthy", summary.healthy, color: .green)
+                            stat("Attention", summary.attention, color: summary.attention > 0 ? .orange : .secondary)
+                        }
+                        GridRow {
+                            stat("Active", summary.active, color: .primary)
+                            stat("Suspended", summary.suspended, color: .primary)
+                            readiness(summary)
                         }
                     }
+                    .padding(.vertical, 6)
                 }
                 Section("Kinds") {
                     ForEach(WorkloadResource.allCases) { resource in
@@ -55,6 +60,7 @@ struct WorkloadsHomeView: View {
                         } label: {
                             Label {
                                 LabeledContent(resource.title, value: String(summary.byResource[resource.rawValue, default: 0]))
+                                    .monospacedDigit()
                             } icon: {
                                 Image(systemName: resource.icon)
                             }
@@ -65,15 +71,17 @@ struct WorkloadsHomeView: View {
                     if workloads.isEmpty {
                         ContentUnavailableView(
                             "No Workloads",
-                            systemImage: "square.3.layers.3d",
+                            systemImage: "square.grid.2x2",
                             description: Text("This cluster did not return any workload resources.")
                         )
-                    } else if filteredWorkloads.isEmpty {
+                    } else if visibleWorkloads.isEmpty {
                         ContentUnavailableView.search(text: query)
                     } else {
-                        ForEach(filteredWorkloads) { workload in
+                        ForEach(visibleWorkloads) { workload in
                             NavigationLink {
-                                WorkloadDetailView(host: host, context: context, workload: workload)
+                                WorkloadDetailView(host: host, context: context, workload: workload) {
+                                    refreshID = UUID()
+                                }
                             } label: {
                                 WorkloadRow(workload: workload)
                             }
@@ -99,6 +107,32 @@ struct WorkloadsHomeView: View {
         .accessibilityIdentifier("workloads.home")
     }
 
+    private func stat(_ title: String, _ value: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value, format: .number)
+                .font(.title2.weight(.semibold)).monospacedDigit()
+                .foregroundStyle(color)
+            Text(title).font(.footnote).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func readiness(_ summary: WorkloadSummary) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(summary.desired > 0 ? "\(summary.ready)/\(summary.desired)" : "—")
+                .font(.title2.weight(.semibold)).monospacedDigit()
+            Text("Pods ready").font(.footnote).foregroundStyle(.secondary)
+            if summary.desired > 0 {
+                ProgressView(value: min(Double(summary.ready) / Double(summary.desired), 1))
+                    .tint(summary.ready < summary.desired ? .orange : .green)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
     @MainActor
     private func refresh() async {
         let id = UUID()
@@ -111,6 +145,7 @@ struct WorkloadsHomeView: View {
             try Task.checkCancellation()
             guard requestID == id else { return }
             workloads = result
+            summary = WorkloadSummary(result)
         } catch {
             guard !Task.isCancelled, requestID == id else { return }
             errorText = connectionMessage(error)

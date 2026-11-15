@@ -7,7 +7,8 @@ struct ClusterListView<Item: ClusterListItem, RowContent: View, DetailContent: V
     let emptyIcon: String
     let load: () async throws -> [Item]
     let rowContent: (Item) -> RowContent
-    let detailContent: (Item) -> DetailContent
+    /// Receives a reload action so a detail screen that changes the item can refresh this list.
+    let detailContent: (Item, @escaping () -> Void) -> DetailContent
 
     init(
         title: String,
@@ -16,7 +17,7 @@ struct ClusterListView<Item: ClusterListItem, RowContent: View, DetailContent: V
         emptyIcon: String,
         load: @escaping () async throws -> [Item],
         @ViewBuilder rowContent: @escaping (Item) -> RowContent,
-        @ViewBuilder detailContent: @escaping (Item) -> DetailContent
+        @ViewBuilder detailContent: @escaping (Item, @escaping () -> Void) -> DetailContent
     ) {
         self.title = title
         self.emptyTitle = emptyTitle
@@ -56,18 +57,19 @@ struct ClusterListView<Item: ClusterListItem, RowContent: View, DetailContent: V
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Loading \(title.lowercased())")
             } else if let items {
+                let visibleItems = filteredItems
                 if items.isEmpty {
                     ContentUnavailableView {
                         Label(emptyTitle, systemImage: emptyIcon)
                     } description: {
                         Text(emptyMessage)
                     }
-                } else if filteredItems.isEmpty {
+                } else if visibleItems.isEmpty {
                     ContentUnavailableView.search(text: query)
                 } else {
-                    ForEach(filteredItems) { item in
+                    ForEach(visibleItems) { item in
                         NavigationLink {
-                            detailContent(item)
+                            detailContent(item) { refreshID = UUID() }
                         } label: {
                             rowContent(item)
                         }

@@ -11,6 +11,10 @@ struct PodLogsView: View {
     @State private var errorText: String?
     @State private var connecting = false
     @State private var streamID = UUID()
+    @State private var atBottom = true
+    @State private var userScrolling = false
+
+    private static let bottomID = "logs.bottom"
 
     init(host: String, context: ClusterContext, pod: Workload) {
         self.host = host
@@ -46,23 +50,56 @@ struct PodLogsView: View {
                                 .id(line.id)
                         }
                     }
+                    // iOS 17 fallback: lazy stacks only materialize rows near the viewport,
+                    // so this sentinel's visibility approximates "the reader is at the tail".
+                    // iOS 18 measures the exact offset in LogTailTracking instead.
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.bottomID)
+                        .onAppear { if #unavailable(iOS 18.0) { atBottom = true } }
+                        .onDisappear { if #unavailable(iOS 18.0) { atBottom = false } }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
             .background(Color(.systemBackground))
-            .onChange(of: lines.count) {
-                guard let last = lines.last else { return }
-                proxy.scrollTo(last.id, anchor: .bottom)
+            .modifier(LogTailTracking(atBottom: $atBottom, userScrolling: $userScrolling))
+            // Watch the newest id, not the count: the count stops changing once the buffer is full.
+            .onChange(of: lines.last?.id) {
+                // Never move content while the finger owns the scroll view or its fling is
+                // still settling; the next line after it comes to rest at the tail catches up.
+                guard atBottom, !userScrolling else { return }
+                proxy.scrollTo(Self.bottomID, anchor: .bottom)
             }
+            .overlay(alignment: .bottom) {
+                if !atBottom && !lines.isEmpty {
+                    Button {
+                        proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                    } label: {
+                        Label("Jump to Latest", systemImage: "arrow.down")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 4)
+                            .frame(minHeight: 36)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .padding(.bottom, 12)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("workloads.pod.logs.jumpToLatest")
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: atBottom)
         }
         .navigationTitle("Logs")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
+                    // Pod names differ by their trailing hash, so keep the end visible.
                     Text(pod.name).font(.headline)
+                        .lineLimit(1).truncationMode(.middle)
                     Text(selectedContainer).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
                 }
             }
             ToolbarItem(placement: .primaryAction) {
@@ -137,6 +174,30 @@ struct PodLogsView: View {
     private static func preferredContainer(_ containers: [WorkloadContainer]) -> String {
         let sidecars = Set(["istio-proxy", "linkerd-proxy", "envoy", "vault-agent"])
         return containers.first(where: { !sidecars.contains($0.name) })?.name ?? containers.first?.name ?? ""
+    }
+}
+
+/// Reports whether the log is scrolled to its tail and whether the user is driving the scroll.
+private struct LogTailTracking: ViewModifier {
+    @Binding var atBottom: Bool
+    @Binding var userScrolling: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    // A line of slack so a fling that lands a few points short still follows.
+                    geometry.visibleRect.maxY >= geometry.contentSize.height - 24
+                } action: { _, isAtTail in
+                    atBottom = isAtTail
+                }
+                .onScrollPhaseChange { _, phase in
+                    // .animating is our own scrollTo, so only finger-driven phases block following.
+                    userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+                }
+        } else {
+            content
+        }
     }
 }
 

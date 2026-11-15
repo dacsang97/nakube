@@ -54,18 +54,28 @@ struct ContextsHomeView: View {
                     } else if let contexts {
                         ForEach(contexts) { context in
                             NavigationLink(value: context) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(context.name).font(.headline)
-                                    if !context.cluster.isEmpty {
-                                        Text(context.cluster).font(.subheadline).foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(context.displayName).font(.headline)
+                                        .lineLimit(2).truncationMode(.middle)
+                                    if let detail = context.displayDetail {
+                                        Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                                            .lineLimit(1).truncationMode(.middle)
                                     }
                                     if context.current {
-                                        Label("Current on desktop", systemImage: "checkmark.circle")
-                                            .font(.caption).foregroundStyle(.secondary)
+                                        // Inline, not a Label: inside a List a Label's icon snaps to
+                                        // the row icon column and pushes the text out of alignment.
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                            Text("Current on desktop")
+                                        }
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(.green)
+                                        .padding(.top, 2)
                                     }
                                 }
                                 .padding(.vertical, 4)
                             }
+                            .accessibilityLabel(context.name)
                             .accessibilityIdentifier("context.\(context.name)")
                         }
                     }
