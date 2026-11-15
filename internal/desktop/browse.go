@@ -552,20 +552,6 @@ func (a *App) watchForward(fw *cluster.Forward, key string) {
 	}
 }
 
-func (a *App) forwardFor(namespace, pod string, local, remote uint16) (*cluster.Forward, bool) {
-	current := a.session.Current()
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for _, fw := range a.forwards {
-		if fw != nil && fw.Context == current && fw.Namespace == namespace && fw.Pod == pod && fw.Local == local && fw.Remote == remote {
-			return fw, false
-		}
-	}
-	request, starting := a.forwardStarting[local]
-	return nil, starting && request.Context == current &&
-		request.Namespace == namespace && request.Pod == pod && request.Remote == remote
-}
-
 func (a *App) forwardState(key string) (*cluster.Forward, *forwardRequest, forwardFailure, bool) {
 	current := a.session.Current()
 	a.mu.Lock()
