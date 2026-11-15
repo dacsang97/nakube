@@ -3,6 +3,7 @@ package cluster
 import (
 	"fmt"
 
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -33,5 +34,9 @@ func (s *Session) ForContext(name string) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes client could not be built")
 	}
-	return &Session{name: name, rules: rules, cfg: cfg, cs: cs}, nil
+	dyn, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes dynamic client could not be built")
+	}
+	return &Session{name: name, rules: rules, cfg: cfg, cs: cs, dyn: dyn}, nil
 }

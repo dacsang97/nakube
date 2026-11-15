@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dacsang97/nakube/internal/cluster"
@@ -17,6 +18,7 @@ import (
 
 func TestPhoneContextOverviewUsesSelectedCluster(t *testing.T) {
 	deleted := make(chan string, 1)
+	patched := make(chan string, 1)
 	kube := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -39,6 +41,16 @@ func TestPhoneContextOverviewUsesSelectedCluster(t *testing.T) {
 			fmt.Fprint(w, `{"apiVersion":"apps/v1","kind":"DeploymentList","items":[{"metadata":{"name":"web","namespace":"default"},"spec":{"replicas":2,"selector":{"matchLabels":{"app":"web"}},"template":{"metadata":{"labels":{"app":"web"}},"spec":{"containers":[{"name":"app","image":"web:v1"}]}}},"status":{"readyReplicas":1,"updatedReplicas":2,"availableReplicas":1}}]}`)
 		case "/api/v1/events":
 			fmt.Fprint(w, `{"apiVersion":"v1","kind":"EventList","items":[]}`)
+		case "/apis/argoproj.io/v1alpha1/applications":
+			fmt.Fprint(w, `{"apiVersion":"argoproj.io/v1alpha1","kind":"ApplicationList","items":[{"apiVersion":"argoproj.io/v1alpha1","kind":"Application","metadata":{"name":"shop","namespace":"argocd","creationTimestamp":"2026-11-01T12:00:00Z"},"spec":{"project":"default","source":{"repoURL":"https://git.example/shop","path":"deploy","targetRevision":"main"},"destination":{"server":"https://kubernetes.default.svc","namespace":"shop"},"syncPolicy":{"automated":{}}},"status":{"sync":{"status":"OutOfSync","revision":"abc123"},"health":{"status":"Degraded","message":"deployment unavailable"},"resources":[{"kind":"Deployment","namespace":"shop","name":"web","status":"OutOfSync","health":{"status":"Degraded"}}],"history":[{"id":7,"revision":"old","initiatedBy":{"username":"operator"}}],"conditions":[{"type":"ComparisonError","message":"denied"}],"operationState":{"phase":"Failed","message":"sync failed","operation":{"initiatedBy":{"username":"operator"}}},"summary":{"images":["web:v1"]},"sourceType":"Directory"}}]}`)
+		case "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/shop":
+			if r.Method != http.MethodPatch {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			body, _ := io.ReadAll(r.Body)
+			patched <- string(body)
+			fmt.Fprint(w, `{"apiVersion":"argoproj.io/v1alpha1","kind":"Application","metadata":{"name":"shop","namespace":"argocd"}}`)
 		default:
 			w.WriteHeader(404)
 			fmt.Fprint(w, `{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"NotFound","code":404}`)
@@ -158,6 +170,39 @@ func TestPhoneContextOverviewUsesSelectedCluster(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown workload status=%d", response.StatusCode)
+	}
+	response, err = http.Get(server.URL + "/v1/argo/applications?context=mobile%2Fteam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawApplications, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var applications []remote.ArgoApplication
+	if err := json.Unmarshal(rawApplications, &applications); err != nil {
+		t.Fatalf("status=%d body=%q decode=%v", response.StatusCode, rawApplications, err)
+	}
+	if response.StatusCode != http.StatusOK || len(applications) != 1 ||
+		applications[0].Name != "shop" || applications[0].Project != "default" ||
+		applications[0].Sync != "OutOfSync" || applications[0].Health != "Degraded" ||
+		len(applications[0].Resources) != 1 || len(applications[0].History) != 1 {
+		t.Fatalf("status=%d applications=%+v", response.StatusCode, applications)
+	}
+	response, err = http.Post(
+		server.URL+"/v1/argo/applications/argocd/shop/sync?context=mobile%2Fteam",
+		"application/json", strings.NewReader(`{"revision":"main","strategy":"hook","prune":true}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("argo sync status=%d", response.StatusCode)
+	}
+	if patch := <-patched; !strings.Contains(patch, `"revision":"main"`) || !strings.Contains(patch, `"prune":true`) {
+		t.Fatalf("argo sync patch=%s", patch)
 	}
 	selected, err := os.ReadFile(state)
 	if err != nil || string(selected) != "desktop\n" || session.Current() != "desktop" {

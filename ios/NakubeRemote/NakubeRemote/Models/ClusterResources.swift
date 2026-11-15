@@ -41,6 +41,7 @@ struct ClusterEvent: Decodable, ClusterListItem {
     let type: String
     let reason: String
     let object: String
+    let apiVersion: String
     let message: String
     let source: String
     let count: Int
@@ -48,7 +49,7 @@ struct ClusterEvent: Decodable, ClusterListItem {
     let lastSeen: String
 
     var searchText: String {
-        [namespace, name, type, reason, object, message, source].joined(separator: " ")
+        [namespace, name, type, reason, object, apiVersion, message, source].joined(separator: " ")
     }
 }
 

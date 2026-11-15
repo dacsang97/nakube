@@ -104,8 +104,9 @@ func (p Phone) ContextEvents(ctx context.Context, name string) ([]remote.Event, 
 		item := &list.Items[i]
 		out = append(out, remote.Event{
 			Namespace: item.Namespace, Name: item.Name, Type: item.Type, Reason: item.Reason,
-			Object: eventObject(item.InvolvedObject), Message: strings.Join(strings.Fields(item.Message), " "),
-			Source: eventSource(item), Count: item.Count, FirstSeen: eventFirstSeen(item),
+			Object: eventObject(item.InvolvedObject), APIVersion: item.InvolvedObject.APIVersion,
+			Message: strings.Join(strings.Fields(item.Message), " "),
+			Source:  eventSource(item), Count: item.Count, FirstSeen: eventFirstSeen(item),
 			LastSeen: eventLastSeen(item),
 		})
 	}

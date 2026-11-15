@@ -59,6 +59,38 @@ struct ClusterHomeView: View {
                     }
                 }
             }
+            Section("Argo CD") {
+                NavigationLink {
+                    ArgoDashboardView(host: host, context: context)
+                } label: {
+                    destination("Dashboard", icon: "gauge.with.dots.needle.50percent")
+                }
+                NavigationLink {
+                    ArgoApplicationsView(host: host, context: context)
+                } label: {
+                    destination("Applications", icon: "arrow.triangle.branch")
+                }
+                NavigationLink {
+                    ArgoApplicationSetsView(host: host, context: context)
+                } label: {
+                    destination("ApplicationSets", icon: "square.stack.3d.up")
+                }
+                NavigationLink {
+                    ArgoProjectsView(host: host, context: context)
+                } label: {
+                    destination("AppProjects", icon: "folder")
+                }
+                NavigationLink {
+                    ArgoRepositoriesView(host: host, context: context)
+                } label: {
+                    destination("Repositories", icon: "externaldrive")
+                }
+                NavigationLink {
+                    ArgoClustersView(host: host, context: context)
+                } label: {
+                    destination("Clusters", icon: "globe")
+                }
+            }
         }
         .accessibilityIdentifier("cluster.home")
         .navigationTitle(context.displayName)

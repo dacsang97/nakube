@@ -20,23 +20,6 @@ type Phone struct {
 	App *App
 }
 
-func (p Phone) ArgoApplications(ctx context.Context) ([]remote.ArgoApp, error) {
-	apps, err := p.App.session.ListArgoApplications(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]remote.ArgoApp, 0, len(apps))
-	for _, app := range apps {
-		out = append(out, remote.ArgoApp{
-			Name:      app.Name,
-			Namespace: app.Namespace,
-			Sync:      app.Sync,
-			Health:    app.Health,
-		})
-	}
-	return out, nil
-}
-
 // StartPhoneListener binds the Tailscale address and publishes a scannable
 // endpoint to Settings. A missing CLI or a down tailnet leaves the desktop
 // running and makes the setup problem visible there.

@@ -2,7 +2,7 @@ import Foundation
 
 enum RemoteError: LocalizedError {
     case invalidHost
-    case http(Int)
+    case http(Int, String?)
     case incompatibleDesktop
     case wrongContext
 
@@ -10,7 +10,8 @@ enum RemoteError: LocalizedError {
         switch self {
         case .invalidHost:
             return "Use the desktop’s full .ts.net MagicDNS address or paste its NaKube QR link. Numeric IP addresses are not supported by this app’s secure transport policy."
-        case .http(let status):
+        case .http(let status, let message):
+            if let message, !message.isEmpty { return message }
             return "The desktop returned HTTP \(status). Keep NaKube running on your desktop and try again."
         case .incompatibleDesktop:
             return "The desktop returned an unsupported response. Update NaKube on your desktop, then try again."
