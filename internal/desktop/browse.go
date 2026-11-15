@@ -147,11 +147,29 @@ func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSna
 				if row.Identity.Kind == "Pod" {
 					a.drawPodMetrics(c, t, row.Namespace, row.Name)
 				}
+				a.drawForwardOpenAction(c, t, row.Forward)
 				resource.Detail(c, t, list, selection.Index)
 			},
 		})
 	} else {
 		a.offerDetailPanel(selection.Changed, false, shellDetailPanel{})
+	}
+}
+
+func (a *App) drawForwardOpenAction(c *ui.Context, t *ui.Theme, forward *cluster.Forward) {
+	if forward == nil || forward.Local == 0 || forward.Status() != "Active" {
+		return
+	}
+	a.mu.Lock()
+	current := a.current
+	a.mu.Unlock()
+	if forward.Context != current {
+		return
+	}
+	destination := fmt.Sprintf("http://127.0.0.1:%d", forward.Local)
+	if ui.Button(c, destination).MinHeight(32).Background(t.Accent).TextColor(t.AccentText).
+		Tooltip("Open " + destination).Label("Open " + destination + " in browser").Clicked() {
+		a.openForward(forward.Local)
 	}
 }
 

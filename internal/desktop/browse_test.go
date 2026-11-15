@@ -361,6 +361,90 @@ func TestForwardTableIncludesProcessState(t *testing.T) {
 	}
 }
 
+func TestForwardListOpensActiveLocalhostDestination(t *testing.T) {
+	a := New(cluster.NewSession())
+	a.current = "dev"
+	a.row = -1
+	forward := &cluster.Forward{
+		Context: "dev", Namespace: "shop", Pod: "web", Local: 8080, Remote: 80,
+	}
+	columns, rows := forwardTableForContext([]*cluster.Forward{forward}, "dev")
+	snap := listSnap{columns: columns, rows: rows}
+	opened := make(chan string, 1)
+	a.openExternal = func(url string) error {
+		opened <- url
+		return nil
+	}
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.detailPanel = nil
+		theme := c.Theme()
+		ui.Row(c).Fill().Padding(shellGap).Gap(shellGap).Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).FillHeight().Children(func() {
+				a.drawList(c, theme, "port-forwards", snap)
+			})
+			a.drawDetailPanel(c, theme)
+		})
+	}, 1000, 700)
+
+	if err := tt.Click("web"); err != nil {
+		t.Fatal(err)
+	}
+	const openLabel = "Open http://127.0.0.1:8080 in browser"
+	if !tt.HasText("http://127.0.0.1:8080") {
+		t.Fatalf("active destination missing: %v", tt.Texts())
+	}
+	if _, ok := tt.Find(openLabel); !ok {
+		t.Fatalf("accessible open action missing: %v", tt.Texts())
+	}
+	if _, ok := tt.Find("Stop"); !ok {
+		t.Fatalf("forward Stop action missing: %v", tt.Texts())
+	}
+	if err := tt.Click(openLabel); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-opened:
+		if got != "http://127.0.0.1:8080" {
+			t.Fatalf("opened URL %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("open action was not dispatched")
+	}
+
+	a.openExternal = func(string) error { return errors.New("browser unavailable") }
+	if err := tt.Click(openLabel); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		a.mu.Lock()
+		got := a.errText
+		a.mu.Unlock()
+		if got == "open port forward: browser unavailable" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("open error = %q", got)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	forward.Local = 0
+	tt.Frame()
+	if _, ok := tt.Find(openLabel); ok {
+		t.Fatal("zero local port exposed browser action")
+	}
+	forward.Local = 8080
+	forward.Stop()
+	tt.Frame()
+	if _, ok := tt.Find(openLabel); ok {
+		t.Fatal("stopping forward exposed browser action")
+	}
+	if _, ok := tt.Find("Stop"); !ok {
+		t.Fatal("stopping forward lost Stop action")
+	}
+}
+
 func TestStopContextForwardsCancelsStartsAndStopsListeners(t *testing.T) {
 	a := New(cluster.NewSession())
 	ctx, cancel := context.WithCancel(context.Background())
