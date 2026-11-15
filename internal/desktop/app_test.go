@@ -21,14 +21,14 @@ import (
 	"github.com/dacsang97/nakube/internal/views/overview"
 )
 
-func TestSidebarOmitsDiagramAndFlux(t *testing.T) {
+func TestSidebarIDsAreUniqueCompleteAndOmitResourceDiagram(t *testing.T) {
 	ids := SidebarIDs()
 	if len(ids) == 0 {
 		t.Fatal("empty sidebar")
 	}
 	seen := map[string]bool{}
 	for _, id := range ids {
-		if id == "resource-diagram" || id == "flux" || strings.Contains(id, "flux") {
+		if id == "resource-diagram" {
 			t.Fatalf("forbidden sidebar id %s", id)
 		}
 		if seen[id] {
@@ -299,9 +299,14 @@ func TestGenericResourcesUseSharedShellPanel(t *testing.T) {
 	if _, ok := tt.Find("Pod details panel"); !ok {
 		t.Fatalf("generic resource did not open shared panel: %v", tt.Texts())
 	}
-	for _, want := range []string{"Pod: api", "Namespace", "prod", "Phase", "Running", "Logs", "Exec"} {
+	for _, want := range []string{"Pod: api", "Namespace", "prod", "Phase", "Running"} {
 		if !tt.HasText(want) {
 			t.Fatalf("generic detail missing %q in %v", want, tt.Texts())
+		}
+	}
+	for _, ambiguous := range []string{"Logs", "Exec", "Forward"} {
+		if tt.HasText(ambiguous) {
+			t.Fatalf("generic Pod detail exposed ambiguous %q action: %v", ambiguous, tt.Texts())
 		}
 	}
 	for _, want := range []string{"Copy name", "Edit", "Remove", "Close details"} {

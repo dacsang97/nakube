@@ -29,6 +29,8 @@ type List struct {
 	Revision      *string
 	OnAction      func(index int, action string)
 	HeaderControl func(c *ui.Context, t *ui.Theme)
+	InputsTitle   string
+	ActionsTitle  string
 }
 
 // Draw paints the list. It does not load it.
@@ -71,8 +73,16 @@ func Detail(c *ui.Context, t *ui.Theme, list List, index int) {
 		}
 	}
 	kit.Facts(c, t, facts)
+	if list.InputsTitle != "" && (row.Kind == "Deployment" || row.Kind == "StatefulSet" || row.Kind == "ReplicaSet" ||
+		row.Kind == "Pod" || row.Kind == "Service" || row.Kind == "Application" || row.Kind == "Release") {
+		kit.Heading(c, t, list.InputsTitle)
+	}
 	inputs(c, row.Kind, list)
-	actionButtons(c, t, BodyActions(row.Kind), func(action string) {
+	actions := BodyActions(row.Kind)
+	if list.ActionsTitle != "" && len(actions) > 0 {
+		kit.Heading(c, t, list.ActionsTitle)
+	}
+	actionButtons(c, t, actions, func(action string) {
 		if list.OnAction != nil {
 			list.OnAction(index, action)
 		}
@@ -144,7 +154,7 @@ func actionButtons(c *ui.Context, t *ui.Theme, names []string, on func(string)) 
 func Actions(kind string) []string {
 	switch kind {
 	case "Pod":
-		return []string{"logs", "exec", "yaml", "forward", "delete"}
+		return []string{"yaml", "delete"}
 	case "Deployment", "StatefulSet", "ReplicaSet":
 		return []string{"yaml", "scale", "restart", "delete"}
 	case "DaemonSet":

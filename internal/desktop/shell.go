@@ -9,12 +9,17 @@ import (
 )
 
 type shellDetailPanel struct {
-	title    string
-	label    string
-	copyText string
-	onEdit   func()
-	onRemove func()
-	draw     func(*ui.Context, *ui.Theme)
+	title             string
+	label             string
+	copyText          string
+	copyInActions     bool
+	actionsLabel      string
+	editLabel         string
+	removeLabel       string
+	onEdit            func()
+	onRemove          func()
+	drawHeaderActions func(*ui.Context, *ui.Theme)
+	draw              func(*ui.Context, *ui.Theme)
 }
 
 // The activity bar and sidebar share the left shell card. The editor is the
@@ -71,28 +76,57 @@ func (a *App) drawDetailPanel(c *ui.Context, t *ui.Theme) {
 		return
 	}
 	panel := a.detailPanel
+	editLabel := panel.editLabel
+	if editLabel == "" {
+		editLabel = "Edit"
+	}
+	removeLabel := panel.removeLabel
+	if removeLabel == "" {
+		removeLabel = "Remove"
+	}
+	copyKey := panel.label + "\x00" + panel.title + "\x00" + panel.copyText
+	copyName := func() {
+		c.WriteClipboard(panel.copyText)
+		a.detailCopiedKey = copyKey
+		a.detailCopiedUntil = c.Now().Add(2 * time.Second)
+		c.After(2 * time.Second)
+	}
 	rightPanel(c, t, panel.label).Children(func() {
 		ui.Row(c).Height(sideTitleH).Shrink(0).Padding(0, 8, 0, 12).Gap(4).AlignItems(ui.Center).Background(tabInactive(t)).Label("Detail panel header").Children(func() {
-			ui.Row(c).Grow(1).MinWidth(0).Gap(4).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, panel.title).FontSize(13).FontWeight(650).SingleLine().Shrink(1).MinWidth(0)
-				copyKey := panel.label + "\x00" + panel.title + "\x00" + panel.copyText
+			ui.Text(c, panel.title).FontSize(13).FontWeight(650).SingleLine().Grow(1).Shrink(1).MinWidth(0).
+				Tooltip(panel.title)
+			if !panel.copyInActions {
 				copyLabel, copyIcon := "Copy name", "copy"
 				if a.detailCopiedKey == copyKey && c.Now().Before(a.detailCopiedUntil) {
 					copyLabel, copyIcon = "Copied", "check"
 				}
-				copyButton := panelHeaderButton(c, t, copyLabel, copyIcon, false)
-				if copyButton.Clicked() {
-					c.WriteClipboard(panel.copyText)
-					a.detailCopiedKey = copyKey
-					a.detailCopiedUntil = c.Now().Add(2 * time.Second)
-					c.After(2 * time.Second)
+				if panelHeaderButton(c, t, copyLabel, copyIcon, false).Clicked() {
+					copyName()
 				}
-			})
-			if panel.onEdit != nil && panelHeaderButton(c, t, "Edit", "pencil", false).Clicked() {
-				panel.onEdit()
 			}
-			if panel.onRemove != nil && panelHeaderButton(c, t, "Remove", "trash-2", true).Clicked() {
-				panel.onRemove()
+			if panel.drawHeaderActions != nil {
+				panel.drawHeaderActions(c, t)
+			}
+			if panel.actionsLabel != "" && (panel.copyInActions || panel.onEdit != nil || panel.onRemove != nil) {
+				actionsButton := panelHeaderButton(c, t, panel.actionsLabel, "list", false)
+				actionsButton.PopoverMenuButton(func(m *ui.Menu) {
+					if panel.copyInActions && m.Item("Copy name").Chosen() {
+						copyName()
+					}
+					if panel.onEdit != nil && m.Item(editLabel).Chosen() {
+						panel.onEdit()
+					}
+					if panel.onRemove != nil && m.Item(removeLabel).Chosen() {
+						panel.onRemove()
+					}
+				})
+			} else {
+				if panel.onEdit != nil && panelHeaderButton(c, t, editLabel, "pencil", false).Clicked() {
+					panel.onEdit()
+				}
+				if panel.onRemove != nil && panelHeaderButton(c, t, removeLabel, "trash-2", true).Clicked() {
+					panel.onRemove()
+				}
 			}
 			if panelHeaderButton(c, t, "Close details", "x", false).Clicked() {
 				a.row = -1

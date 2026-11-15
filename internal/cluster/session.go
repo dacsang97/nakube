@@ -263,6 +263,21 @@ func (s *Session) dynamicClient() (dynamic.Interface, error) {
 	return s.dyn, nil
 }
 
+// dynamicClientForContext atomically verifies the selected context and
+// captures its client. The returned client remains bound to that context if
+// the desktop switches the Session while a request is in flight.
+func (s *Session) dynamicClientForContext(expected string) (dynamic.Interface, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.name != expected {
+		return nil, errors.New("kube context changed before the environment update")
+	}
+	if s.dyn == nil {
+		return nil, ErrNoContext
+	}
+	return s.dyn, nil
+}
+
 func (s *Session) stateFile() (string, error) {
 	s.mu.Lock()
 	path := s.statePath

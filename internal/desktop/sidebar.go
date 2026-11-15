@@ -7,7 +7,7 @@ type Item struct {
 	Label string
 }
 
-// Section is one sidebar group. Resource diagram and Flux are not here.
+// Section is one sidebar group in the fixed navigation structure.
 type Section struct {
 	Title string
 	Items []Item
@@ -98,7 +98,7 @@ func Sections() []Section {
 	}
 }
 
-// SidebarIDs lists every sidebar id. resource-diagram and flux are absent.
+// SidebarIDs lists every sidebar id; resource-diagram is intentionally absent.
 func SidebarIDs() []string {
 	var ids []string
 	for _, section := range Sections() {

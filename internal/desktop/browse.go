@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -146,11 +147,29 @@ func (a *App) drawList(c *ui.Context, t *ui.Theme, selected string, snap listSna
 				if row.Identity.Kind == "Pod" {
 					a.drawPodMetrics(c, t, row.Namespace, row.Name)
 				}
+				a.drawForwardOpenAction(c, t, row.Forward)
 				resource.Detail(c, t, list, selection.Index)
 			},
 		})
 	} else {
 		a.offerDetailPanel(selection.Changed, false, shellDetailPanel{})
+	}
+}
+
+func (a *App) drawForwardOpenAction(c *ui.Context, t *ui.Theme, forward *cluster.Forward) {
+	if forward == nil || forward.Local == 0 || forward.Status() != "Active" {
+		return
+	}
+	a.mu.Lock()
+	current := a.current
+	a.mu.Unlock()
+	if forward.Context != current {
+		return
+	}
+	destination := fmt.Sprintf("http://127.0.0.1:%d", forward.Local)
+	if ui.Button(c, destination).MinHeight(32).Background(t.Accent).TextColor(t.AccentText).
+		Tooltip("Open " + destination).Label("Open " + destination + " in browser").Clicked() {
+		a.openForward(forward.Local)
 	}
 }
 
@@ -191,7 +210,7 @@ func placeholderColumns(id string) []string {
 	case "workloads":
 		return []string{"Phase", "Pods"}
 	case "port-forwards":
-		return []string{"Namespace", "Pod", "Local", "Remote"}
+		return []string{"Context", "Namespace", "Pod", "Local", "Remote", "Status"}
 	default:
 		return []string{"Namespace", "Name", "Age"}
 	}
@@ -200,9 +219,17 @@ func placeholderColumns(id string) []string {
 func (a *App) runAction(row listRow, action string) {
 	switch action {
 	case "logs":
-		a.openLogs(row.Namespace, row.Name, "")
+		if container, ok := a.singlePodContainer(row.Namespace, row.Name); ok {
+			a.openPodLogs(row.Namespace, row.Name, container)
+		} else {
+			a.setErr("choose a container for logs")
+		}
 	case "exec":
-		a.openExec(row.Namespace, row.Name, "")
+		if container, ok := a.singlePodContainer(row.Namespace, row.Name); ok {
+			a.openPodShell(row.Namespace, row.Name, container)
+		} else {
+			a.setErr("choose a container for shell")
+		}
 	case "yaml":
 		a.openYAML(row.Identity)
 	case "forward":
@@ -301,50 +328,269 @@ func (a *App) runConfirmed(c Confirm) error {
 	}
 }
 
+type forwardRequest struct {
+	Context   string
+	Namespace string
+	Pod       string
+	Remote    uint16
+	Local     uint16
+	Key       string
+	Token     uint64
+	Cancel    context.CancelFunc
+}
+
+type forwardFailure struct {
+	Local   uint16
+	Remote  uint16
+	Message string
+}
+
 func (a *App) startForward(row listRow) {
+	a.startForwardFor(row, "")
+}
+
+func (a *App) startForwardFor(row listRow, key string) {
+	a.mu.Lock()
+	switching := a.podEnvSwitching
+	a.mu.Unlock()
+	if switching {
+		a.setErr("wait for the context switch to finish")
+		return
+	}
 	local, remote, err := a.forwardPorts()
 	if err != nil {
 		a.setErr(err.Error())
 		return
 	}
+	contextName := a.session.Current()
+	ctx, cancel := context.WithTimeout(context.Background(), cluster.PortForwardStartupTimeout)
+	request := forwardRequest{
+		Context: contextName, Namespace: row.Namespace, Pod: row.Name,
+		Remote: remote, Key: key, Cancel: cancel,
+	}
+	if err := a.reserveForward(local, &request); err != nil {
+		cancel()
+		a.recordForwardFailure(key, local, remote, err.Error())
+		return
+	}
+	a.invalidate()
 	go func() {
+		defer cancel()
 		pod := row.Name
 		if row.Identity.Kind == "Service" {
-			pod, err = a.session.ReadyPod(context.Background(), row.Namespace, row.Name)
-			if err != nil {
-				a.setErr(publicError(err))
+			var resolveErr error
+			pod, resolveErr = a.session.ReadyPodInContext(ctx, contextName, row.Namespace, row.Name)
+			if resolveErr != nil {
+				if !a.forwardContextValid(contextName) {
+					a.clearForwardStart(local, request.Token)
+				} else {
+					a.failForwardStart(local, request.Token, forwardStartError(resolveErr))
+				}
 				return
 			}
 		}
-		fw, err := a.session.PortForward(context.Background(), row.Namespace, pod, local, remote)
-		if err != nil {
-			a.setErr(publicError(err))
+		var fw *cluster.Forward
+		var startErr error
+		if a.portForwardRun != nil {
+			fw, startErr = a.portForwardRun(ctx, contextName, row.Namespace, pod, local, remote)
+		} else {
+			fw, startErr = a.session.PortForwardInContext(ctx, contextName, row.Namespace, pod, local, remote)
+		}
+		validContext := a.forwardContextValid(contextName)
+		adopted := false
+		if fw != nil {
+			if validContext {
+				adopted = a.adoptForward(local, request.Token, fw, key)
+			} else {
+				fw.Stop()
+				a.clearForwardStart(local, request.Token)
+			}
+		}
+		if startErr != nil {
+			if !validContext {
+				a.clearForwardStart(local, request.Token)
+			} else if fw != nil && adopted {
+				a.recordForwardFailure(key, local, remote, forwardStartError(startErr))
+			} else {
+				a.failForwardStart(local, request.Token, forwardStartError(startErr))
+			}
+			if fw != nil {
+				a.watchForward(fw, key)
+			}
+			return
+		}
+		if fw == nil {
+			a.failForwardStart(local, request.Token, "port-forward stopped before becoming ready")
+			return
+		}
+		if !adopted {
+			fw.Stop()
+			a.watchForward(fw, key)
 			return
 		}
 		a.mu.Lock()
-		a.forwards = append(a.forwards, fw)
+		delete(a.forwardFailed, key)
 		a.mu.Unlock()
 		a.setErr("")
 		a.invalidate()
+		a.watchForward(fw, key)
 	}()
+}
+
+func (a *App) forwardContextValid(contextName string) bool {
+	a.mu.Lock()
+	switching := a.podEnvSwitching
+	a.mu.Unlock()
+	return !switching && contextName == a.session.Current()
+}
+
+func forwardStartError(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Sprintf("port-forward did not become ready within %s", cluster.PortForwardStartupTimeout)
+	}
+	if errors.Is(err, context.Canceled) {
+		return "port-forward was cancelled"
+	}
+	return publicError(err)
+}
+
+func (a *App) reserveForward(local uint16, request *forwardRequest) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.forwardStarting == nil {
+		a.forwardStarting = map[uint16]forwardRequest{}
+	}
+	if _, exists := a.forwardStarting[local]; exists {
+		return fmt.Errorf("local port %d is already starting a forward", local)
+	}
+	for _, fw := range a.forwards {
+		if fw != nil && fw.Local == local && fw.Status() != "Stopped" {
+			return fmt.Errorf("local port %d is already being forwarded", local)
+		}
+	}
+	a.forwardSeq++
+	request.Local = local
+	request.Token = a.forwardSeq
+	a.forwardStarting[local] = *request
+	if request.Key != "" {
+		delete(a.forwardFailed, request.Key)
+	}
+	return nil
+}
+
+func (a *App) clearForwardStart(local uint16, token uint64) bool {
+	a.mu.Lock()
+	request, matches := a.forwardStarting[local]
+	if matches && request.Token == token {
+		delete(a.forwardStarting, local)
+	}
+	a.mu.Unlock()
+	if matches && request.Token == token {
+		a.invalidate()
+		return true
+	}
+	return false
+}
+
+func (a *App) failForwardStart(local uint16, token uint64, message string) bool {
+	a.mu.Lock()
+	request, matches := a.forwardStarting[local]
+	if !matches || request.Token != token {
+		a.mu.Unlock()
+		return false
+	}
+	delete(a.forwardStarting, local)
+	if request.Key != "" {
+		if a.forwardFailed == nil {
+			a.forwardFailed = map[string]forwardFailure{}
+		}
+		a.forwardFailed[request.Key] = forwardFailure{Local: local, Remote: request.Remote, Message: message}
+	}
+	a.errText = message
+	a.mu.Unlock()
+	a.invalidate()
+	return true
+}
+
+func (a *App) recordForwardFailure(key string, local, remote uint16, message string) {
+	a.mu.Lock()
+	if key != "" {
+		if a.forwardFailed == nil {
+			a.forwardFailed = map[string]forwardFailure{}
+		}
+		a.forwardFailed[key] = forwardFailure{Local: local, Remote: remote, Message: message}
+	}
+	a.errText = message
+	a.mu.Unlock()
+	a.invalidate()
+}
+
+func (a *App) adoptForward(local uint16, token uint64, fw *cluster.Forward, key string) bool {
+	a.mu.Lock()
+	request, matches := a.forwardStarting[local]
+	if !matches || request.Token != token {
+		a.mu.Unlock()
+		return false
+	}
+	delete(a.forwardStarting, local)
+	a.forwards = append(a.forwards, fw)
+	if a.forwardKeys == nil {
+		a.forwardKeys = map[*cluster.Forward]string{}
+	}
+	a.forwardKeys[fw] = key
+	a.mu.Unlock()
+	a.invalidate()
+	return true
+}
+
+func (a *App) watchForward(fw *cluster.Forward, key string) {
+	<-fw.Done()
+	forwardErr := fw.Err()
+	a.removeForward(fw)
+	if forwardErr != nil {
+		a.recordForwardFailure(key, fw.Local, fw.Remote, publicError(forwardErr))
+	}
+}
+
+func (a *App) forwardState(key string) (*cluster.Forward, *forwardRequest, forwardFailure, bool) {
+	current := a.session.Current()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for fw, itemKey := range a.forwardKeys {
+		if itemKey == key && fw != nil && fw.Context == current {
+			return fw, nil, forwardFailure{}, false
+		}
+	}
+	for _, request := range a.forwardStarting {
+		if request.Key == key && request.Context == current {
+			copy := request
+			return nil, &copy, forwardFailure{}, false
+		}
+	}
+	failure, failed := a.forwardFailed[key]
+	return nil, nil, failure, failed
 }
 
 func (a *App) forwardPorts() (uint16, uint16, error) {
 	local, err := strconv.ParseUint(strings.TrimSpace(a.forwardLocal), 10, 16)
 	if err != nil || local == 0 {
-		return 0, 0, fmt.Errorf("local port must be a number")
+		return 0, 0, fmt.Errorf("local port must be between 1 and 65535")
 	}
 	remote, err := strconv.ParseUint(strings.TrimSpace(a.forwardRemote), 10, 16)
 	if err != nil || remote == 0 {
-		return 0, 0, fmt.Errorf("remote port must be a number")
+		return 0, 0, fmt.Errorf("remote port must be between 1 and 65535")
 	}
 	return uint16(local), uint16(remote), nil
 }
 
 func (a *App) stopForward(fw *cluster.Forward) {
-	if fw != nil {
+	if fw != nil && fw.Context == a.session.Current() {
 		fw.Stop()
 	}
+	a.invalidate()
+}
+
+func (a *App) removeForward(fw *cluster.Forward) {
 	a.mu.Lock()
 	next := make([]*cluster.Forward, 0, len(a.forwards))
 	for _, item := range a.forwards {
@@ -353,6 +599,7 @@ func (a *App) stopForward(fw *cluster.Forward) {
 		}
 	}
 	a.forwards = next
+	delete(a.forwardKeys, fw)
 	a.mu.Unlock()
 	a.invalidate()
 }
@@ -483,7 +730,7 @@ func (a *App) liveRowsLocked(id string) ([]string, []listRow) {
 		cols, rows := podTable(a.pods)
 		return cols, filterListRows(rows, a.nsFilter)
 	case "port-forwards":
-		return forwardTable(a.forwards)
+		return forwardTableForContext(a.forwards, a.current)
 	default:
 		return nil, nil
 	}
@@ -853,20 +1100,24 @@ func podTable(pods map[string]*corev1.Pod) ([]string, []listRow) {
 }
 
 func forwardTable(items []*cluster.Forward) ([]string, []listRow) {
+	return forwardTableForContext(items, "")
+}
+
+func forwardTableForContext(items []*cluster.Forward, contextName string) ([]string, []listRow) {
 	out := make([]listRow, 0, len(items))
 	for _, fw := range items {
-		if fw == nil {
+		if fw == nil || (contextName != "" && fw.Context != contextName) {
 			continue
 		}
 		out = append(out, listRow{
-			Cells:     []string{fw.Namespace, fw.Pod, strconv.Itoa(int(fw.Local)), strconv.Itoa(int(fw.Remote))},
+			Cells:     []string{fw.Context, fw.Namespace, fw.Pod, strconv.Itoa(int(fw.Local)), strconv.Itoa(int(fw.Remote)), fw.Status()},
 			Namespace: fw.Namespace,
 			Name:      fw.Pod,
 			Identity:  cluster.Identity{Kind: "Forward", Namespace: fw.Namespace, Name: fw.Pod},
 			Forward:   fw,
 		})
 	}
-	return []string{"Namespace", "Pod", "Local", "Remote"}, out
+	return []string{"Context", "Namespace", "Pod", "Local", "Remote", "Status"}, out
 }
 
 func readyCount(pod *corev1.Pod) string {

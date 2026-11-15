@@ -151,17 +151,26 @@ func (p Phone) PortForwards(ctx context.Context) ([]remote.PortForward, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	p.App.mu.Lock()
-	defer p.App.mu.Unlock()
-	out := make([]remote.PortForward, 0, len(p.App.forwards))
-	for _, forward := range p.App.forwards {
-		if forward != nil {
+	out := p.App.portForwardsSnapshot()
+	return out, nil
+}
+
+// portForwardsSnapshot captures the committed desktop context and its
+// process-owned forwards under the same lock. An empty committed context is a
+// real startup state and matches only forwards captured with empty context.
+func (a *App) portForwardsSnapshot() []remote.PortForward {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	current := a.current
+	out := make([]remote.PortForward, 0, len(a.forwards))
+	for _, forward := range a.forwards {
+		if forward != nil && forward.Context == current && forward.Status() == "Active" {
 			out = append(out, remote.PortForward{
 				Namespace: forward.Namespace, Pod: forward.Pod, Local: forward.Local, Remote: forward.Remote,
 			})
 		}
 	}
-	return out, nil
+	return out
 }
 
 func (p Phone) contextClientset(name string) (*cluster.Session, kubernetes.Interface, error) {

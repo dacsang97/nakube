@@ -190,7 +190,7 @@ private struct EventRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            // Mail-style header: what happened on the left, when on the right.
+            // Event header: what happened on the left, when on the right.
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 if event.type == "Warning" {
                     StatusBadge(text: "Warning", tone: .warning)

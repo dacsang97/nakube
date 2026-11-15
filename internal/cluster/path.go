@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// PreparePath prepends directories a Dock or Finder launch does not put on
-// PATH, so exec credential plugins can be found. It is not an init function.
+// PreparePath prepends directories graphical app launches omit from PATH, so
+// exec credential plugins can be found. It is not an init function.
 func PreparePath() {
 	candidates := []string{
 		"/opt/homebrew/bin",

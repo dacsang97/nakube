@@ -33,6 +33,18 @@ type tabBody struct {
 	execErr    string
 	yaml       *yamlScreen
 
+	podEnvPod       string
+	podEnvContainer string
+	podEnvInit      bool
+	podEnvName      string
+	podEnvValue     string
+	podEnvEditing   string
+	podEnvBusy      bool
+	podEnvErr       string
+	podEnvGen       uint64
+	podEnvBusyGen   uint64
+	podEnvContext   string
+
 	scaleTo       string
 	forwardLocal  string
 	forwardRemote string
@@ -189,6 +201,17 @@ func saveInto(a *App, b *tabBody) {
 	b.execConn = a.execConn
 	b.execErr = a.execErr
 	b.yaml = a.yaml
+	b.podEnvPod = a.podEnvPod
+	b.podEnvContainer = a.podEnvContainer
+	b.podEnvInit = a.podEnvInit
+	b.podEnvName = a.podEnvName
+	b.podEnvValue = a.podEnvValue
+	b.podEnvEditing = a.podEnvEditing
+	b.podEnvBusy = a.podEnvBusy
+	b.podEnvErr = a.podEnvErr
+	b.podEnvGen = a.podEnvGen
+	b.podEnvBusyGen = a.podEnvBusyGen
+	b.podEnvContext = a.podEnvContext
 	b.scaleTo = a.scaleTo
 	b.forwardLocal = a.forwardLocal
 	b.forwardRemote = a.forwardRemote
@@ -250,6 +273,17 @@ func loadFrom(a *App, b *tabBody) {
 	a.execConn = b.execConn
 	a.execErr = b.execErr
 	a.yaml = b.yaml
+	a.podEnvPod = b.podEnvPod
+	a.podEnvContainer = b.podEnvContainer
+	a.podEnvInit = b.podEnvInit
+	a.podEnvName = b.podEnvName
+	a.podEnvValue = b.podEnvValue
+	a.podEnvEditing = b.podEnvEditing
+	a.podEnvBusy = b.podEnvBusy
+	a.podEnvErr = b.podEnvErr
+	a.podEnvGen = b.podEnvGen
+	a.podEnvBusyGen = b.podEnvBusyGen
+	a.podEnvContext = b.podEnvContext
 	a.scaleTo = b.scaleTo
 	a.forwardLocal = b.forwardLocal
 	a.forwardRemote = b.forwardRemote

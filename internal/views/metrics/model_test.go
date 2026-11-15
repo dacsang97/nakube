@@ -132,16 +132,26 @@ func TestDrawStates(t *testing.T) {
 	}
 }
 
-func TestMetricTabsKeyboardAndNarrowHitAreas(t *testing.T) {
+func TestMetricTabsKeyboardAndCompactSingleRow(t *testing.T) {
 	tab, rng, hover := DefaultTab, DefaultRange, 12
 	tt := ui.NewTester(func(c *ui.Context) {
 		Draw(c, c.Theme(), View{Tab: tab}, &tab, &rng, &hover, Icons{})
 	}, 320, 500)
-	for _, label := range []string{"CPU", "Memory", "Network", "Filesystem", "Range"} {
+	tt.SetPreferences(ui.Preferences{TextScale: 1.25})
+	tt.Frame()
+	labels := []string{"Range", "CPU", "Memory", "Network", "Filesystem"}
+	var firstY, previousRight float32
+	for i, label := range labels {
 		r, ok := tt.Find(label)
 		if !ok || r.W < 40 || r.H < 40 || r.X < 0 || r.X+r.W > 320 {
 			t.Fatalf("%s hit area is clipped or too small: %+v, found=%v", label, r, ok)
 		}
+		if i == 0 {
+			firstY = r.Y
+		} else if r.Y != firstY || r.X < previousRight {
+			t.Fatalf("metrics toolbar wrapped or overlapped at 320px: %s=%+v previousRight=%v firstY=%v", label, r, previousRight, firstY)
+		}
+		previousRight = r.X + r.W
 	}
 	if err := tt.Click("Memory"); err != nil {
 		t.Fatal(err)
